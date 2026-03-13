@@ -215,6 +215,7 @@ function update(dt) {
         intc.vz -= (intc.vz/spd3) * da;
       }
     } else {
+      if (!intc.burnoutSpd) intc.burnoutSpd = spd3;   // record speed at burnout once
       intc.currentMassG  = intc.dryMassG;
       intc.currentThrust = 0;
       const massKg = intc.dryMassG * 0.001;
@@ -814,6 +815,7 @@ function runHeadlessCombination(params, droneCount, seed) {
           intc.vx -= (intc.vx/spd3)*da2; intc.vy -= (intc.vy/spd3)*da2; intc.vz -= (intc.vz/spd3)*da2;
         }
       } else {
+        if (!intc.burnoutSpd) intc.burnoutSpd = spd3;   // record speed at burnout once
         intc.currentMassG = intc.dryMassG;
         intc.vz -= 9.81 * DT;
         if (spd3 > 0.01) {
@@ -840,7 +842,14 @@ function runHeadlessCombination(params, droneCount, seed) {
         const td3 = Math.sqrt(tdx2*tdx2 + tdy2*tdy2 + tdz2*tdz2);
         const cs  = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
         if (td3 > 0.1 && cs > 0.1) {
-          const maxLatAccel = intc.maxLatG * 9.81 * (intc.effectiveTurnRate / 90.0);
+          const turnScale2   = intc.effectiveTurnRate / 90.0;
+          let effectiveLatG2 = intc.maxLatG;
+          if (intc.burnoutSpd && intc.burnRemaining <= 0) {
+            const spdRatio2  = cs / intc.burnoutSpd;
+            effectiveLatG2   = intc.maxLatG * spdRatio2 * spdRatio2;
+            effectiveLatG2   = Math.max(0.5, Math.min(intc.maxLatG, effectiveLatG2));
+          }
+          const maxLatAccel = effectiveLatG2 * 9.81 * turnScale2;
           const dvx = (tdx2/td3)*cs - intc.vx, dvy = (tdy2/td3)*cs - intc.vy, dvz = (tdz2/td3)*cs - intc.vz;
           const ux = intc.vx/cs, uy = intc.vy/cs, uz = intc.vz/cs;
           const parDot = dvx*ux + dvy*uy + dvz*uz;
