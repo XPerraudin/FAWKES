@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drone Intercept Simulation 3D v04.11</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+  :root {
+    --bg: #060a0e;
+    --green: #00ff88;
+    --green-dim: #00994d;
+    --red: #ff2233;
+    --yellow: #ffcc00;
+    --blue: #33aaff;
+    --cyan: #00eeff;
+    --panel: #08120a;
+    --border: #163320;
+    --dim: #2a5235;
+    --text: #77ffaa;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:var(--bg); color:var(--text);
+    font-family:'Share Tech Mono',monospace;
+    height:100vh; display:flex; flex-direction:column; overflow:hidden;
+  }
+  .scanline {
+    position:fixed; inset:0; pointer-events:none; z-index:200;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.06) 2px,rgba(0,0,0,0.06) 4px);
+  }
+  header {
+    padding:6px 16px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    background:rgba(0,255,136,0.02); flex-shrink:0;
+  }
+  .title { font-family:'Orbitron',sans-serif; font-size:12px; font-weight:900; color:var(--green); letter-spacing:4px; }
+  .subtitle { font-size:9px; color:var(--dim); letter-spacing:2px; }
+  .hud-bar { display:flex; gap:14px; font-size:10px; color:var(--dim); flex-wrap:wrap; }
+  .hv { color:var(--green); }
+  .hv.red { color:var(--red); }
+  .main { display:flex; flex:1; overflow:hidden; }
+  .sidebar {
+    width:210px; min-width:210px; border-right:1px solid var(--border);
+    padding:10px; display:flex; flex-direction:column; gap:8px;
+    background:var(--panel); overflow-y:auto; flex-shrink:0;
+  }
+  .ptitle {
+    font-family:'Orbitron',sans-serif; font-size:8px; letter-spacing:3px;
+    color:var(--green-dim); border-bottom:1px solid var(--border);
+    padding-bottom:4px; margin-bottom:3px;
+  }
+  .cg { display:flex; flex-direction:column; gap:5px; }
+  label { font-size:9px; color:var(--dim); letter-spacing:1px; }
+  select, input[type=range] {
+    width:100%; background:var(--bg); border:1px solid var(--border);
+    color:var(--green); font-family:'Share Tech Mono',monospace; font-size:9px; padding:3px 5px;
+  }
+  input[type=range] { padding:2px; accent-color:var(--green); }
+  .vd { font-size:10px; color:var(--green); }
+  .btn {
+    font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:2px;
+    padding:6px 10px; cursor:pointer; border:1px solid; background:transparent;
+    transition:all 0.15s; width:100%; text-transform:uppercase;
+  }
+  .bg { border-color:var(--green); color:var(--green); }
+  .bg:hover { background:rgba(0,255,136,0.08); box-shadow:0 0 8px rgba(0,255,136,0.25); }
+  .br { border-color:var(--red); color:var(--red); }
+  .br:hover { background:rgba(255,34,51,0.08); }
+  .by { border-color:var(--yellow); color:var(--yellow); }
+  .by:hover { background:rgba(255,204,0,0.08); }
+  .srow { display:flex; justify-content:space-between; font-size:9px; padding:2px 0; border-bottom:1px solid rgba(22,51,32,0.5); }
+  .sl { color:var(--dim); }
+  .sv { color:var(--green); }
+  .sv.r { color:var(--red); }
+  .sv.y { color:var(--yellow); }
+  .sv.b { color:var(--blue); }
+  .sv.c { color:var(--cyan); }
+  .canvas-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
+  canvas { flex:1; display:block; cursor:crosshair; }
+
+  /* ── Tooltip ── */
+  #tip {
+    position: fixed; z-index: 9999;
+    max-width: 220px; padding: 7px 10px;
+    background: rgba(6,14,20,0.97);
+    border: 1px solid var(--cyan);
+    color: #b0ccd8; font: 10px/1.5 'Share Tech Mono', monospace;
+    pointer-events: none; display: none;
+    box-shadow: 0 0 12px rgba(0,238,255,0.15);
+  }
+  label[data-tip] { cursor: help; }
+  body.iso-dragging { cursor:grabbing !important; }
+  body.iso-dragging canvas { cursor:grabbing !important; }
+  #isoResetBtn {
+    display:none; position:absolute; top:10px; right:52px;
+    font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:2px;
+    padding:5px 10px; cursor:pointer; border:1px solid var(--cyan);
+    color:var(--cyan); background:rgba(6,10,14,0.85);
+    text-transform:uppercase; transition:all 0.15s; z-index:10;
+  }
+  #isoResetBtn:hover { background:rgba(0,238,255,0.12); box-shadow:0 0 8px rgba(0,238,255,0.3); }
+  #pathsToggleBtn {
+    display:none; position:absolute; top:10px; right:170px;
+    font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:2px;
+    padding:5px 10px; cursor:pointer; border:1px solid var(--green);
+    color:var(--green); background:rgba(6,10,14,0.85);
+    text-transform:uppercase; transition:all 0.15s; z-index:10;
+  }
+  #pathsToggleBtn.off { border-color:#444; color:#444; }
+  #pathsToggleBtn:hover { background:rgba(0,255,136,0.08); }
+  #scalesToggleBtn {
+    display:none; position:absolute; top:10px; right:310px;
+    font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:2px;
+    padding:5px 10px; cursor:pointer; border:1px solid var(--green);
+    color:var(--green); background:rgba(6,10,14,0.85);
+    text-transform:uppercase; transition:all 0.15s; z-index:10;
+  }
+  #scalesToggleBtn.off { border-color:#444; color:#444; }
+  #scalesToggleBtn:hover { background:rgba(0,255,136,0.08); }
+  #killsOnlyBtn {
+    display:none; position:absolute; top:10px; right:450px;
+    font-family:'Orbitron',sans-serif; font-size:9px; letter-spacing:2px;
+    padding:5px 10px; cursor:pointer; border:1px solid #ffcc00;
+    color:#ffcc00; background:rgba(6,10,14,0.85);
+    text-transform:uppercase; transition:all 0.15s; z-index:10;
+  }
+  #killsOnlyBtn.active { background:rgba(255,204,0,0.15); box-shadow:0 0 8px rgba(255,204,0,0.3); }
+  #killsOnlyBtn:hover { background:rgba(255,204,0,0.10); }
+  #sideScaleOverlay {
+    display:none; position:absolute; top:10px; left:6px; bottom:44px;
+    z-index:10; background:rgba(6,10,14,0.88); border:1px solid #1a5530;
+    padding:6px 5px; flex-direction:column; align-items:center; gap:6px; width:36px;
+  }
+  #sideScaleOverlay label {
+    font-family:'Share Tech Mono',monospace; font-size:7px; color:#2a8850;
+    letter-spacing:1px; margin:0; white-space:nowrap; text-align:center;
+    writing-mode:horizontal-tb;
+  }
+  #sideScaleOverlay .side-scale-val {
+    font-family:'Share Tech Mono',monospace; font-size:8px; color:#00ff88;
+    writing-mode:horizontal-tb; text-align:center; white-space:nowrap;
+  }
+  #sideScaleOverlay input[type=range] {
+    flex:1; margin:0; writing-mode:vertical-lr;
+    direction:rtl; appearance:slider-vertical; -webkit-appearance:slider-vertical;
+    width:18px; cursor:pointer;
+  }
+  .view-toggle {
+    display:flex; gap:4px; padding:4px 8px;
+    background:var(--panel); border-top:1px solid var(--border); flex-shrink:0;
+  }
+  .vtbtn {
+    font-family:'Orbitron',sans-serif; font-size:8px; letter-spacing:1px;
+    padding:3px 8px; cursor:pointer; border:1px solid var(--border);
+    background:transparent; color:var(--dim); transition:all 0.15s;
+  }
+  .vtbtn.active { border-color:var(--green); color:var(--green); background:rgba(0,255,136,0.06); }
+  .rpanel {
+    width:190px; min-width:190px; border-left:1px solid var(--border);
+    padding:10px; background:var(--panel); display:flex; flex-direction:column;
+    gap:6px; overflow-y:auto; flex-shrink:0;
+  }
+  .elog { font-size:8px; color:var(--dim); line-height:1.6; overflow-y:auto; max-height:220px; }
+  .ev { padding:1px 0; border-bottom:1px solid rgba(22,51,32,0.3); }
+  .ev.hit { color:var(--red); }
+  .ev.intercept { color:var(--green); }
+  .ev.launch { color:var(--yellow); }
+  .ev.info { color:var(--blue); }
+  .ev.terminal { color:var(--cyan); }
+  .legend { display:flex; flex-direction:column; gap:3px; }
+  .li { display:flex; align-items:center; gap:9px; font-size:12px; font-weight:600; letter-spacing:0.3px; padding:3px 0; }
+  .li-label { color:#d8f0e0; font-family:'Share Tech Mono',monospace; }
+  .li-sub { font-size:9px; color:#5a8a6a; font-weight:400; margin-left:auto; font-family:'Share Tech Mono',monospace; }
+  .li-sep { border-top:1px solid #1a3a22; margin:3px 0; }
+  .dot { width:11px; height:11px; border-radius:50%; flex-shrink:0; box-shadow:0 0 6px currentColor; }
+  .blink { animation:blink 1s step-end infinite; }
+  @keyframes blink { 50%{opacity:0;} }
+  footer {
+    border-top:1px solid var(--border); padding:4px 16px;
+    display:flex; justify-content:space-between; font-size:8px;
+    color:var(--dim); background:var(--panel); flex-shrink:0;
+  }
+
+  .sw-cb { font-size:8px; color:#77ffaa; display:inline-block; margin:1px 0; cursor:pointer; }
+  .sw-cb input { accent-color:#ffcc00; margin-right:4px; }
+</style>
+</head>
+<body>
+<div class="scanline"></div>
+<header>
+  <div>
+    <div class="title">INTERCEPT-SIM // v04.11 — 3D</div>
+    <div class="subtitle">BALLISTIC INTERCEPT VALIDATION WITH ALTITUDE AXIS + GRAVITY</div>
+  </div>
+  <div class="hud-bar">
+    <span>T: <span class="hv" id="hSimTime">00:00.0</span></span>
+    <span>🚁 THREATS: <span class="hv" id="hThreats">0</span></span>
+    <span>🚁 ALIVE: <span class="hv red" id="hActive">0</span></span>
+    <span>🚀 FIRED: <span class="hv" id="hFired">0</span></span>
+    <span>🚀 IN AIR: <span class="hv" id="hIntc">0</span></span>
+    <span>💥 IMPACTS: <span class="hv red" id="hHits">0</span></span>
+    <span>✓ KILLS: <span class="hv" id="hKills">0</span></span>
+    <span>KILL%: <span class="hv" id="hKillPct">0%</span></span>
+  </div>
+</header>
+<div class="main">
+
+<!-- TOOLTIP -->
+<div id="tip"></div>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div>
+    <div class="ptitle">▸ MAP SIZE</div>
+    <div class="cg">
+      <label data-tip="Side length of the square battlefield in metres. Drones spawn from the edges and fly toward the target at centre. Larger maps require longer-range motors. The ISO grid and edge scale update automatically.">FIELD SIZE (m): <span class="vd" id="vMapSize">1000</span></label>
+      <input type="range" id="mapSize" min="500" max="5000" step="250" value="1000">
+      <div style="font-size:8px;color:var(--dim);letter-spacing:1px;">
+        1px = <span id="vMapPxScale">2.0</span>m &nbsp;·&nbsp; diagonal <span id="vMapDiag">1414</span>m
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ THREAT CONFIG</div>
+    <div class="cg">
+      <label data-tip="The type of drone threat to spawn. Shahed-136 is slow and fixed-wing with a terminal dive. FPV Quad is fast and highly maneuverable. DJI Phantom is mid-range. Mixed Swarm spawns all three types randomly.">DRONE TYPE</label>
+      <select id="droneType">
+        <option value="shahed">Shahed-136 (Loitering)</option>
+        <option value="quadcopter">FPV Racing Quad</option>
+        <option value="phantom">DJI Phantom</option>
+        <option value="swarm">Mixed Swarm</option>
+      </select>
+      <label data-tip="Target altitude drones will cruise at after spawning. Drones use a proportional controller to hold this height. Shahed will dive from this altitude when it reaches terminal range.">CRUISE ALT (m): <span class="vd" id="vDA">120</span></label>
+      <input type="range" id="droneAlt" min="20" max="500" step="10" value="120">
+      <label data-tip="Random ±variance applied to each drone's cruise altitude. Adds realistic spread to a wave — drones won't all fly at the exact same height.">ALT VARIANCE (m): <span class="vd" id="vAV">40</span></label>
+      <input type="range" id="altVar" min="0" max="120" step="5" value="40">
+      <label data-tip="Total number of drones to spawn in this wave. They are released one at a time at the interval below.">SPAWN COUNT: <span class="vd" id="vSC">3</span></label>
+      <input type="range" id="spawnCount" min="1" max="12" value="3">
+      <label data-tip="Time between successive drone spawns. Lower values create a tight swarm; higher values spread the wave out, giving launchers more time to react to each threat individually.">SPAWN INTERVAL (s): <span class="vd" id="vSI">2.0</span></label>
+      <input type="range" id="spawnInterval" min="0.5" max="6" step="0.5" value="2">
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ INTERCEPTOR CONFIG</div>
+    <div class="cg">
+      <label data-tip="Rocket motor used by interceptors. High-power reloadable motors — burn time and total impulse determine range and terminal velocity. After burnout the rocket coasts under gravity and drag.">MOTOR</label>
+      <select id="motorType">
+        <option value="h45w">H45W — 6.0s burn / 270 N·s</option>
+        <option value="h128w">H128W — 2.0s burn / 256 N·s</option>
+        <option value="i49w">I49W — 7.7s burn / 377 N·s</option>
+        <option value="i59w">I59W — 8.0s burn / 472 N·s</option>
+        <option value="i200w">I200W — 2.5s burn / 500 N·s</option>
+        <option value="j90w">J90W — 5.0s burn / 450 N·s</option>
+        <option value="j120w">J120W — 4.2s burn / 504 N·s</option>
+        <option value="j330w">J330W — 2.8s burn / 924 N·s</option>
+        <option value="k185w">K185W — 5.0s burn / 925 N·s</option>
+        <option value="k400w">K400W — 3.2s burn / 1,280 N·s</option>
+        <option value="k1000w" selected>K1000W — 1.8s burn / 1,800 N·s</option>
+      </select>
+      <label data-tip="Simulates a warhead, sensor package, or any additional nose mass. Shifts CoM forward, reducing aerodynamic stability and turn rate.">PAYLOAD MASS (g): <span class="vd" id="vPayload">0</span> <span style="color:#ffcc00;font-size:8px" id="vTurnRate">turn: 90°/s</span></label>
+      <input type="range" id="payloadMass" min="0" max="2000" step="50" value="0">
+      <label data-tip="0g = passive fins only, no steering, ballistic flight. 12g = hobby servo-actuated fins (realistic default). 25g = full canard + TVC. Higher authority costs drag, area, and mass.">AIRFRAME AGILITY (g): <span class="vd" id="vAgility">12</span> <span style="font-size:8px;color:#ff4444;display:none" id="vPassiveWarn">PASSIVE: guidance disabled</span></label>
+      <input type="range" id="agilityG" min="0" max="25" step="2.5" value="12">
+      <label data-tip="Controls both where the rocket aims at launch and how it steers mid-flight. Ballistic: fixed vector, no correction. Pure Pursuit: always turns toward the drone's live position — aggressive but can overshoot. Prop Nav: smoother proportional steering toward live position. Lead + PN: predicts where the drone will be at time-of-flight, launches toward that point, then uses PN to refine — most efficient.">SEEK MODE</label>
+      <select id="seekMode">
+        <option value="ballistic">Ballistic — fixed vector, no steering</option>
+        <option value="pursuit">Pure Pursuit — track current position</option>
+        <option value="pn">Prop. Nav — smooth intercept steering</option>
+        <option value="lead" selected>Lead + PN — predict position, then refine</option>
+        <option value="lead_terminal">Lead + PN + Terminal — predict, refine, then pure pursuit final 35m</option>
+      </select>
+      <label data-tip="Direct: rocket flies straight toward the intercept point. Lofted: rocket launches at a steeper angle, arcing above the drone's flight path and descending onto it from above — harder for a drone to evade and reduces ground fratricide risk.">TRAJECTORY MODE</label>
+      <select id="trajectMode">
+        <option value="direct">Direct Intercept</option>
+        <option value="lofted" selected>Lofted Trajectory</option>
+      </select>
+      <label data-tip="Extra degrees added on top of the direct elevation angle when Lofted Trajectory is selected. Higher values mean a taller arc — more altitude gained before descent, at the cost of longer flight time.">LOFT ANGLE + °: <span class="vd" id="vLoftA">20</span></label>
+      <input type="range" id="loftAngle" min="10" max="45" step="5" value="20">
+      <label data-tip="3D slant range at which a launcher will engage an incoming drone. The launcher fires when a drone enters this radius. Shown as a dashed ring in TOP and SIDE views.">LAUNCH RANGE (m): <span class="vd" id="vLR">1100</span></label>
+      <input type="range" id="launchRange" min="100" max="2000" step="50" value="1100">
+      <label data-tip="Initial launch elevation angle from horizontal. Only applies in Ballistic mode — guided modes compute the optimal elevation automatically. Higher angles loft the rocket more steeply off the rail.">LAUNCH ELEVATION °: <span class="vd" id="vLE">65</span></label>
+      <input type="range" id="launchElev" min="20" max="85" step="5" value="65">
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ SALVO CONFIG</div>
+    <div class="cg">
+      <label data-tip="How many interceptors each launcher fires per engagement trigger. All rounds target the same drone but are spread across the Batch Spread angle and staggered by the Stagger Interval.">SALVO SIZE: <span class="vd" id="vSalvo">1</span></label>
+      <input type="range" id="salvoSize" min="1" max="8" step="1" value="1">
+      <label data-tip="Weapons Free: launchers auto-engage any drone that enters range. Closest Threat Only: all launchers focus on the single nearest drone — conserves ammo against swarms. Hold Fire: no auto-launch; useful for manually timing engagements by pausing and adjusting.">ENGAGEMENT RULE</label>
+      <select id="engagementRule">
+        <option value="free">Weapons Free — engage any in range</option>
+        <option value="closest">Closest Threat Only — one at a time</option>
+        <option value="hold">Hold Fire — no auto-launch</option>
+      </select>
+      <label data-tip="Delay between each rocket in a salvo. At 0s all rounds fire simultaneously. Higher values spread launches over time, creating a rolling 'fence' of interceptors that covers more of the drone's flight path — useful against fast-moving or evasive targets.">STAGGER INTERVAL (s): <span class="vd" id="vStagger">0.0</span></label>
+      <input type="range" id="staggerInt" min="0" max="2" step="0.1" value="0">
+      <label data-tip="Total angular spread of a multi-round salvo, distributed evenly around the central bearing. E.g. 3 rounds at 10° spread launches at -10°, 0°, +10°. Widens the intercept corridor to compensate for target maneuvering uncertainty.">BATCH SPREAD °: <span class="vd" id="vBS">5</span></label>
+      <input type="range" id="batchSpread" min="0" max="20" step="1" value="5">
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ WARHEAD</div>
+    <div class="cg">
+      <div style="display:flex;align-items:center;gap:6px;padding:2px 0">
+        <input type="checkbox" id="fragEnabled" style="accent-color:var(--green);width:14px;height:14px">
+        <label data-tip="When enabled, the rocket does not need a direct hit. Instead, any drone within the Frag Kill Radius at the moment of closest approach is destroyed. A translucent ring shows the kill zone around each active interceptor." style="margin:0;color:var(--text)">Fragmentation / Zone Defense</label>
+      </div>
+      <label data-tip="Radius of the fragmentation kill zone in metres. Any drone within this distance of the warhead detonation point is counted as a kill. Real 40mm airburst grenades have ~5m lethal radius; larger warheads 10–20m.">FRAG KILL RADIUS (m): <span class="vd" id="vFragR">5</span></label>
+      <input type="range" id="fragRadius" min="1" max="30" step="1" value="5">
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ SIMULATION</div>
+    <button class="btn bg" id="btnStart">▶ START</button>
+    <button class="btn by" id="btnPause">⏸ PAUSE</button>
+    <button class="btn br" id="btnReset">↺ RESET</button>
+    <button class="btn" id="btnEnd" style="background:#0a1a2a;border-color:#00eeff;color:#00eeff">⏹ REVIEW SIM</button>
+    <button class="btn" id="btnSweep" style="background:#0a1a2a;border-color:#ffcc00;color:#ffcc00;margin-top:2px">⚡ SWEEP</button>
+    <div style="height:4px"></div>
+    <label data-tip="Multiplier for simulation time. At 1× the sim runs in real-time. Higher values fast-forward the physics — useful for testing long-range engagements without waiting. Very high speeds may reduce accuracy of guidance calculations.">SIM SPEED: <span class="vd" id="vSS">1.0×</span></label>
+    <input type="range" id="simSpeed" min="0.1" max="6" step="0.1" value="1">
+    <label data-tip="Toggles trail rendering for drones and interceptors. Trails show recent flight paths and are useful for analyzing trajectories. Turning them off improves performance in large swarm scenarios.">TRAILS</label>
+    <select id="showTrails"><option value="1">ON</option><option value="0">OFF</option></select>
+    <label data-tip="Applies gravitational deceleration (9.81 m/s²) to interceptors during their coast phase (after burnout). With gravity ON the rocket follows a realistic ballistic arc and will fall to the ground if it misses. OFF gives an idealized frictionless coast — useful for baseline range testing.">GRAVITY ON COAST</label>
+    <select id="gravityOn"><option value="1">ON (9.81 m/s²)</option><option value="0">OFF</option></select>
+    <div style="display:flex;align-items:center;gap:6px;padding:3px 0">
+      <input type="checkbox" id="showImpactIcons" checked style="accent-color:var(--green);width:14px;height:14px">
+      <label data-tip="Show persistent markers where interceptors hit the ground (grey ✕) or successfully killed a drone (green ✚). Useful for post-run analysis of where intercepts succeeded or failed." style="margin:0;color:var(--text)">Impact Icons</label>
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ MOTOR DATA</div>
+    <div class="srow"><span class="sl">CLASS</span><span class="sv c" id="ms_cls">-</span></div>
+    <div class="srow"><span class="sl">AVG THRUST</span><span class="sv" id="ms_thr">-</span></div>
+    <div class="srow"><span class="sl">PEAK THRUST</span><span class="sv" id="ms_peak">-</span></div>
+    <div class="srow"><span class="sl">BURN TIME</span><span class="sv" id="ms_burn">-</span></div>
+    <div class="srow"><span class="sl">TOTAL IMPULSE</span><span class="sv" id="ms_imp">-</span></div>
+    <div class="srow"><span class="sl">PROPELLANT</span><span class="sv" id="ms_prop">-</span></div>
+    <div class="srow"><span class="sl">LAUNCH MASS</span><span class="sv y" id="ms_lmass">-</span></div>
+    <div class="srow" data-tip="Live interceptor mass as propellant burns off. Reduces from launch mass to dry mass + payload over the burn duration."><span class="sl">CURRENT MASS</span><span class="sv" id="ms_cmass">-</span></div>
+    <div class="srow"><span class="sl">CURRENT T/W</span><span class="sv" id="ms_tw">-</span></div>
+    <div class="srow"><span class="sl">EFF. Cd</span><span class="sv" id="ms_cd">-</span></div>
+    <div class="srow"><span class="sl">EFF. DRY MASS</span><span class="sv" id="ms_drymass">-</span></div>
+  </div>
+</div>
+
+<!-- CANVAS -->
+<div class="canvas-wrap">
+  <canvas id="simCanvas"></canvas>
+  <button id="isoResetBtn">↺ RESET VIEW</button>
+  <button id="pathsToggleBtn">PATHS: ON</button>
+  <button id="scalesToggleBtn">SCALES: ON</button>
+  <button id="killsOnlyBtn">KILLS ONLY</button>
+  <div id="sideScaleOverlay">
+    <label>ZOOM</label>
+    <input type="range" id="sideHeightScale2" min="1" max="500" step="1" value="1" orient="vertical">
+    <span class="side-scale-val" id="vSHS2">1×</span>
+  </div>
+  <div class="view-toggle">
+    <span style="font-size:9px;color:var(--dim);margin-right:4px;align-self:center">VIEW:</span>
+    <button class="vtbtn" id="vbTop">TOP (XY)</button>
+    <button class="vtbtn active" id="vbIso">ISO (3D)</button>
+    <button class="vtbtn" id="vbSide">SIDE (XZ)</button>
+    <span style="margin-left:auto;font-size:8px;color:var(--dim)" id="footCoords">—</span>
+  </div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="rpanel">
+  <div>
+    <div class="ptitle">▸ LEGEND</div>
+    <div class="legend">
+      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">THREATS</div>
+      <div class="li"><div class="dot" style="background:#ff2233;color:#ff2233"></div><span class="li-label" style="color:#ff8899">Shahed-136</span><span class="li-sub">kamikaze UAV</span></div>
+      <div class="li"><div class="dot" style="background:#ff7700;color:#ff7700"></div><span class="li-label" style="color:#ffaa66">FPV Quad</span><span class="li-sub">fast / agile</span></div>
+      <div class="li"><div class="dot" style="background:#ffaa33;color:#ffaa33"></div><span class="li-label" style="color:#ffd088">DJI Phantom</span><span class="li-sub">commercial</span></div>
+      <div class="li-sep"></div>
+      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">FRIENDLY</div>
+      <div class="li"><div class="dot" style="background:#00ff88;color:#00ff88"></div><span class="li-label" style="color:#88ffcc">Interceptor</span><span class="li-sub">rocket</span></div>
+      <div class="li"><div class="dot" style="background:#33aaff;color:#33aaff"></div><span class="li-label" style="color:#88ccff">Target</span><span class="li-sub">ground asset</span></div>
+      <div class="li"><div class="dot" style="background:#cccc00;color:#cccc00"></div><span class="li-label" style="color:#eeee66">Launcher</span><span class="li-sub">right-click</span></div>
+      <div class="li-sep"></div>
+      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">IMPACT ICONS</div>
+      <div class="li">
+        <svg width="13" height="13" viewBox="0 0 13 13" style="flex-shrink:0"><line x1="2" y1="2" x2="11" y2="11" stroke="#667" stroke-width="2"/><line x1="11" y1="2" x2="2" y2="11" stroke="#667" stroke-width="2"/></svg>
+        <span class="li-label" style="color:#778899">Ground crash</span>
+      </div>
+      <div class="li">
+        <svg width="13" height="13" viewBox="0 0 13 13" style="flex-shrink:0"><line x1="6.5" y1="1" x2="6.5" y2="12" stroke="#44dd77" stroke-width="2"/><line x1="1" y1="6.5" x2="12" y2="6.5" stroke="#44dd77" stroke-width="2"/></svg>
+        <span class="li-label" style="color:#44dd77">Kill confirmed</span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ LIVE STATS</div>
+    <div class="srow"><span class="sl">THREATS ALIVE</span><span class="sv r" id="ls_t">0</span></div>
+    <div class="srow"><span class="sl">INTERCEPTORS</span><span class="sv" id="ls_i">0</span></div>
+    <div class="srow"><span class="sl">KILL RATE</span><span class="sv" id="ls_kr">0%</span></div>
+    <div class="srow"><span class="sl">AVG KILL TIME</span><span class="sv" id="ls_at">-</span></div>
+    <div class="srow"><span class="sl">CLOSEST MISS</span><span class="sv y" id="ls_cm">-</span></div>
+    <div class="srow"><span class="sl">HIGHEST THREAT ALT</span><span class="sv c" id="ls_ha">-</span></div>
+    <div class="srow"><span class="sl">MAX INTC SPEED</span><span class="sv" id="ls_ms">-</span></div>
+  </div>
+  <div>
+    <div class="ptitle">▸ EVENT LOG <span class="blink">█</span></div>
+    <div class="elog" id="eventLog"></div>
+  </div>
+  <div>
+    <div class="ptitle">▸ 3D PHYSICS</div>
+    <div style="font-size:8px;color:var(--dim);line-height:1.5">
+      Full 3D kinematics: vx,vy,vz updated each tick. Interceptor burn: thrust along velocity vector. Coast: gravity 9.81m/s² pulls vz down. Drones hold altitude via proportional climb control. Shahed dives in terminal phase. Kill = 3D Euclidean distance &lt; 12m.
+    </div>
+  </div>
+  <div>
+    <div class="ptitle">▸ CONTROLS</div>
+    <div style="font-size:8px;color:var(--dim);line-height:1.6">
+      LEFT-CLICK → move target<br>RIGHT-CLICK → place launcher<br>TOP/ISO/SIDE → change view
+    </div>
+  </div>
+</div>
+</div>
+<footer>
+  <span>SCALE: 1px=2m | KILL RADIUS: 12m (3D point contact) | GRAVITY: 9.81 m/s² on coast phase</span>
+  <span id="footerInfo">READY</span>
+</footer>
+
+<!-- END SIM MODAL -->
+<div id="endModal" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.82);align-items:center;justify-content:center;">
+  <div id="endPanel" style="background:#080f14;border:1px solid #00eeff;max-width:520px;width:90%;padding:24px;font-family:'Share Tech Mono',monospace;color:#77ffaa;max-height:85vh;overflow-y:auto;">
+    <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;color:#00eeff;border-bottom:1px solid #163320;padding-bottom:8px;margin-bottom:14px;">⏹ ENGAGEMENT SUMMARY</div>
+    <div id="endBody"></div>
+    <div style="margin-top:18px;display:flex;gap:8px;">
+      <button id="endReviewBtn" style="flex:1;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px;background:#0a1a2a;border:1px solid #00eeff;color:#00eeff;cursor:pointer;">REVIEW SIM</button>
+      <button id="endResetBtn" style="flex:1;font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px;background:#0a1a2a;border:1px solid #ff2233;color:#ff2233;cursor:pointer;">RESET</button>
+    </div>
+  </div>
+</div>
+
+<!-- SWEEP MODAL -->
+<div id="sweepModal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.92);align-items:flex-start;justify-content:center;overflow-y:auto;">
+<div style="background:#080f14;border:1px solid #ffcc00;width:96%;max-width:900px;margin:20px auto;padding:24px;font-family:'Share Tech Mono',monospace;color:#77ffaa;box-sizing:border-box;">
+
+  <!-- Header -->
+  <div style="font-family:'Orbitron',sans-serif;font-size:13px;letter-spacing:4px;color:#ffcc00;border-bottom:1px solid #3a2e00;padding-bottom:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;">
+    ⚡ PARAMETER SWEEP LABORATORY
+    <button id="swCloseTitleBtn" style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:5px 10px;background:#0a1a2a;border:1px solid #ff2233;color:#ff2233;cursor:pointer;">✕ CLOSE</button>
+  </div>
+
+  <!-- SECTION 1: SWEEP CONFIGURATION -->
+  <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:3px;color:#ffcc00;margin-bottom:10px;">▸ SWEEP CONFIGURATION</div>
+
+  <div id="swConfigGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+
+    <!-- Drone Types -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">DRONE TYPES</span>
+        <button class="sw-toggle" data-group="drone" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="drone" value="shahed" checked> Shahed-136 @ 120m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="drone" value="quadcopter" checked> FPV Quad @ 80m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="drone" value="phantom" checked> DJI Phantom @ 100m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="drone" value="mixed"> Mixed @ 110m (random)</label>
+    </div>
+
+    <!-- Motors -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">MOTORS</span>
+        <button class="sw-toggle" data-group="motor" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="motor" value="h128w"> H128W</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="motor" value="i200w"> I200W</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="motor" value="j120w"> J120W</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="motor" value="j330w"> J330W</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="motor" value="k1000w" checked> K1000W</label>
+    </div>
+
+    <!-- Loft Angles -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">LOFT ANGLES</span>
+        <button class="sw-toggle" data-group="loft" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="loft" value="10"> 10°</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="loft" value="20" checked> 20°</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="loft" value="35"> 35°</label>
+    </div>
+
+    <!-- Launch Ranges -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">LAUNCH RANGES</span>
+        <button class="sw-toggle" data-group="range" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="range" value="200"> 200m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="range" value="400"> 400m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="range" value="600"> 600m</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="range" value="800" checked> 800m</label>
+    </div>
+  </div>
+
+  <!-- NEW sweepable rows — full-width grid -->
+  <div id="swConfigGrid2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+
+    <!-- AIRFRAME AGILITY -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">AIRFRAME AGILITY (maxLatG)</span>
+        <button class="sw-toggle" data-group="agility" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="0"> 0g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="5"> 5g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="7.5"> 7.5g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="10"> 10g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="12.5" checked> 12.5g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="15"> 15g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="17.5"> 17.5g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="20"> 20g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="22.5"> 22.5g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="agility" value="25"> 25g</label>
+    </div>
+
+    <!-- FRAG RADIUS -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">FRAG RADIUS (m)</span>
+        <button class="sw-toggle" data-group="fragr" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="0.5"> 0.5m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="1.0"> 1.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="1.5" checked> 1.5m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="2.0"> 2.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="3.0"> 3.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="5.0"> 5.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="10.0"> 10.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="15.0"> 15.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="20.0"> 20.0m</label>
+      <label class="sw-cb"><input type="checkbox" data-group="fragr" value="30.0"> 30.0m</label>
+    </div>
+
+    <!-- SEEK MODE -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">SEEK MODE</span>
+        <button class="sw-toggle" data-group="seekmode" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="ballistic"> Ballistic</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="pursuit"> Pure Pursuit</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="pn"> Prop Nav</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="lead" checked> Lead+PN</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="lead_terminal"> Lead+PN+Terminal</label>
+    </div>
+
+    <!-- TRAJECTORY MODE -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">TRAJECTORY MODE</span>
+        <button class="sw-toggle" data-group="trajmode" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="trajmode" value="direct"> Direct</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="trajmode" value="lofted" checked> Lofted</label>
+    </div>
+
+    <!-- PAYLOAD MASS -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">PAYLOAD MASS (g)</span>
+        <button class="sw-toggle" data-group="payload" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="0" checked> 0g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="100"> 100g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="250"> 250g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="500"> 500g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="750"> 750g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="1000"> 1000g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="1500"> 1500g</label>
+      <label class="sw-cb"><input type="checkbox" data-group="payload" value="2000"> 2000g</label>
+    </div>
+
+    <!-- SALVO SIZE -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">SALVO SIZE</span>
+        <button class="sw-toggle" data-group="salvo" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="1" checked> 1</label>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="2"> 2</label>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="3"> 3</label>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="4"> 4</label>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="6"> 6</label>
+      <label class="sw-cb"><input type="checkbox" data-group="salvo" value="8"> 8</label>
+    </div>
+
+    <!-- STAGGER INTERVAL -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">STAGGER INTERVAL (s)</span>
+        <button class="sw-toggle" data-group="stagger" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="stagger" value="0.0" checked> 0.0s</label>
+      <label class="sw-cb"><input type="checkbox" data-group="stagger" value="0.2"> 0.2s</label>
+      <label class="sw-cb"><input type="checkbox" data-group="stagger" value="0.5"> 0.5s</label>
+      <label class="sw-cb"><input type="checkbox" data-group="stagger" value="1.0"> 1.0s</label>
+      <label class="sw-cb"><input type="checkbox" data-group="stagger" value="2.0"> 2.0s</label>
+    </div>
+
+    <!-- BATCH SPREAD -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">BATCH SPREAD (°)</span>
+        <button class="sw-toggle" data-group="batchspread" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="batchspread" value="0"> 0°</label>
+      <label class="sw-cb"><input type="checkbox" data-group="batchspread" value="5" checked> 5°</label>
+      <label class="sw-cb"><input type="checkbox" data-group="batchspread" value="10"> 10°</label>
+      <label class="sw-cb"><input type="checkbox" data-group="batchspread" value="15"> 15°</label>
+      <label class="sw-cb"><input type="checkbox" data-group="batchspread" value="20"> 20°</label>
+    </div>
+
+    <!-- FRAGMENTATION ENABLED -->
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;grid-column:1/-1;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="color:#00eeff;font-size:9px;letter-spacing:2px;">FRAGMENTATION ENABLED</span>
+        <button class="sw-toggle" data-group="fragon" style="font-size:8px;padding:2px 6px;background:#0a1a2a;border:1px solid #444;color:#aaa;cursor:pointer;">ALL</button>
+      </div>
+      <label class="sw-cb"><input type="checkbox" data-group="fragon" value="true" checked> On</label>
+      <label class="sw-cb" style="margin-left:16px;"><input type="checkbox" data-group="fragon" value="false"> Off</label>
+    </div>
+
+  </div>
+
+  <!-- Trial size + counter -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;">
+      <div style="color:#00eeff;font-size:9px;letter-spacing:2px;margin-bottom:8px;">TRIAL SIZE</div>
+      <div style="font-size:9px;color:#556655;margin-bottom:4px;">DRONES PER COMBINATION</div>
+      <input type="number" id="swDroneCount" min="5" max="50" value="10" style="background:#0a1218;border:1px solid #2a4a2a;color:#77ffaa;font-size:12px;padding:4px;width:60px;">
+    </div>
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="padding:8px;background:#0a1218;border:1px solid #ffcc00;font-size:9px;margin-bottom:6px;">
+        <span id="swComboCount" style="color:#ffcc00;font-weight:bold;">0</span> combinations ×
+        <span id="swDroneCountDisplay" style="color:#ffcc00;">10</span> drones =
+        <span id="swTotalEngagements" style="color:#00ff88;font-weight:bold;">0</span> total engagements
+      </div>
+      <div id="swLargeWarnLabel" style="display:none;color:#ff2233;font-size:9px;letter-spacing:1px;font-family:'Orbitron',sans-serif;padding:4px 6px;border:1px solid #ff2233;background:rgba(255,34,51,0.07);">⚠ LARGE SWEEP — consider reducing parameter coverage</div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: RUN CONTROLS -->
+  <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:3px;color:#ffcc00;margin-bottom:10px;">▸ RUN CONTROLS</div>
+  <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;margin-bottom:14px;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button id="swRunBtn" style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px 16px;background:#0a1a2a;border:1px solid #00ff88;color:#00ff88;cursor:pointer;">▶ RUN SWEEP</button>
+      <button id="swAbortBtn" style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px 16px;background:#0a1a2a;border:1px solid #ff2233;color:#ff2233;cursor:pointer;display:none;">⏹ ABORT</button>
+    </div>
+    <div id="swProgressWrap" style="display:none;">
+      <div style="font-size:9px;color:#556655;margin-bottom:4px;">
+        <span id="swProgressLabel">Combination 0 of 0</span>
+        <span style="float:right;color:#ffcc00;" id="swETA">ETA: —</span>
+      </div>
+      <div style="background:#0a1218;border:1px solid #2a4a2a;height:10px;border-radius:2px;overflow:hidden;margin-bottom:8px;">
+        <div id="swProgressBar" style="height:100%;background:#00ff88;width:0%;transition:width 0.2s;"></div>
+      </div>
+      <div style="font-size:9px;display:flex;gap:16px;">
+        <span style="color:#00ff88;">✓ Kills: <span id="swLiveKills">0</span></span>
+        <span style="color:#ff2233;">✗ Misses: <span id="swLiveMisses">0</span></span>
+        <span style="color:#ffcc00;">Rate: <span id="swLiveRate">—</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 3: RESULTS -->
+  <div id="swResultsSection" style="display:none;">
+    <div style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:3px;color:#ffcc00;margin-bottom:10px;">▸ RESULTS</div>
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;margin-bottom:10px;">
+      <div style="color:#00eeff;font-size:9px;letter-spacing:2px;margin-bottom:8px;">TOP 5 CONFIGURATIONS BY KILL RATE</div>
+      <div id="swTopTable" style="font-size:8px;overflow-x:auto;"></div>
+    </div>
+    <div style="background:#0a1218;border:1px solid #1a2a1a;padding:10px;margin-bottom:10px;">
+      <div style="color:#00eeff;font-size:9px;letter-spacing:2px;margin-bottom:6px;">RAW JSON RESULTS</div>
+      <textarea id="swJsonArea" readonly style="width:100%;height:180px;background:#050a0d;border:1px solid #2a4a2a;color:#445544;font-size:7px;font-family:'Share Tech Mono',monospace;resize:vertical;box-sizing:border-box;padding:6px;"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button id="swCopyJsonBtn" style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px 14px;background:#0a1a2a;border:1px solid #ffcc00;color:#ffcc00;cursor:pointer;">COPY JSON</button>
+      <button id="swCloseResultBtn" style="font-family:'Orbitron',sans-serif;font-size:9px;letter-spacing:2px;padding:8px 14px;background:#0a1a2a;border:1px solid #ff2233;color:#ff2233;cursor:pointer;">CLOSE</button>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

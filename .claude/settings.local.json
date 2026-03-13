@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Read(//c/Users/xavpe/AppData/Roaming/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(cmd //c \"where node\")",
+      "Bash(cmd //c \"node --version\")",
+      "Bash(powershell -Command \"Get-Command node -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source; Get-Command npm -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source\")",
+      "Bash(powershell -Command \"Get-ChildItem -Path ''C:\\\\'', ''C:\\\\Program Files'', ''C:\\\\Program Files \\(x86\\)'', $env:APPDATA, $env:LOCALAPPDATA -Filter ''node.exe'' -Recurse -ErrorAction SilentlyContinue -Depth 3 | Select-Object -First 5 FullName\")",
+      "Read(//usr/local/bin/**)",
+      "Read(//usr/bin/**)",
+      "Bash(/usr/local/bin/node --version)",
+      "Bash(echo $PATH)",
+      "Read(//usr/**)",
+      "Bash(npm --version)",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(npm run:*)"
+    ]
+  }
+}
