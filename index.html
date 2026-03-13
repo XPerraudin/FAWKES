@@ -183,6 +183,18 @@
 
   .sw-cb { font-size:8px; color:#77ffaa; display:inline-block; margin:1px 0; cursor:pointer; }
   .sw-cb input { accent-color:#ffcc00; margin-right:4px; }
+  .brand-overlay {
+    position:absolute; top:12px; left:12px;
+    display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+    pointer-events:none; z-index:10;
+  }
+  .brand-logo-row { display:flex; align-items:center; gap:8px; }
+  .brand-logo { width:38px; height:38px; opacity:0.88; filter:drop-shadow(0 0 5px rgba(255,255,255,0.25)); }
+  .brand-name {
+    font-family:'Orbitron',sans-serif; font-size:13px; font-weight:700;
+    color:#ffffff; letter-spacing:3px; opacity:0.9;
+  }
+  .brand-credit { font-size:8px; color:rgba(255,255,255,0.4); letter-spacing:2px; padding-left:2px; }
 </style>
 </head>
 <body>
@@ -347,6 +359,13 @@
 
 <!-- CANVAS -->
 <div class="canvas-wrap">
+  <div class="brand-overlay">
+    <div class="brand-logo-row">
+      <img src="/VectorStagOnWhite.svg" class="brand-logo" alt="StagOn Logo">
+      <span class="brand-name">STAGON</span>
+    </div>
+    <span class="brand-credit">CREATED BY XAVIER PERRAUDIN</span>
+  </div>
   <canvas id="simCanvas"></canvas>
   <button id="isoResetBtn">↺ RESET VIEW</button>
   <button id="pathsToggleBtn">PATHS: ON</button>
