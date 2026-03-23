@@ -16,7 +16,16 @@
       "Read(//usr/**)",
       "Bash(npm --version)",
       "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(python -c \"from reportlab.platypus import SimpleDocTemplate; print\\(''reportlab ok''\\)\")",
+      "Bash(python3 -c \"from reportlab.platypus import SimpleDocTemplate; print\\(''ok''\\)\")",
+      "Bash(py -c \"from reportlab.platypus import SimpleDocTemplate; print\\(''ok''\\)\")",
+      "Bash(ls /usr/local/bin/node* /usr/bin/node*)",
+      "Bash(command -v node nodejs)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" --check \"C:/Users/xavpe/Documents/_LBS/Interceptor/FAWKES/src/guidance.js\")",
+      "Bash(echo \"guidance EXIT:$?\")",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" --check \"C:/Users/xavpe/Documents/_LBS/Interceptor/FAWKES/src/simulation.js\")",
+      "Bash(echo \"simulation EXIT:$?\")"
     ]
   }
 }

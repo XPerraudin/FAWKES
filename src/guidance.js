@@ -40,16 +40,17 @@ export function steerInterceptor(intc, dt) {
   if (cs <= 0.1) return;
 
   // ── Physically-derived lateral acceleration cap ──
-  const turnScale = intc.effectiveTurnRate / 90.0;  // 0..1 from payload mass
-
-  // Coast phase: scale lateral G by (speed/burnoutSpeed)² — mirrors dynamic pressure drop
+  // Dynamic-pressure scaling: fin authority ∝ q ∝ v² throughout the entire flight.
+  // Use burnout speed as the reference; fall back to current speed during burn phase
+  // (burnoutSpd is not yet recorded while still burning).
   let effectiveLatG = intc.maxLatG;
-  if (intc.burnoutSpd && intc.burnRemaining <= 0) {
-    const spdRatio = cs / intc.burnoutSpd;
+  const refSpd = intc.burnoutSpd ?? cs; // fallback: still burning → reference = current spd
+  if (refSpd > 0) {
+    const spdRatio = cs / refSpd;
     effectiveLatG  = intc.maxLatG * spdRatio * spdRatio;
     effectiveLatG  = Math.max(0.5, Math.min(intc.maxLatG, effectiveLatG)); // fin floor / burn cap
   }
-  const maxLatAccel = effectiveLatG * 9.81 * turnScale; // m/s²
+  const maxLatAccel = effectiveLatG * 9.81; // m/s²
 
   // Desired velocity direction: unit vector toward steer target, at current speed
   const dvx = (tdx/td3)*cs - intc.vx;

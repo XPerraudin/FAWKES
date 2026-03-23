@@ -842,14 +842,15 @@ function runHeadlessCombination(params, droneCount, seed) {
         const td3 = Math.sqrt(tdx2*tdx2 + tdy2*tdy2 + tdz2*tdz2);
         const cs  = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
         if (td3 > 0.1 && cs > 0.1) {
-          const turnScale2   = intc.effectiveTurnRate / 90.0;
+          // Dynamic-pressure scaling: unconditional, same logic as guidance.js
           let effectiveLatG2 = intc.maxLatG;
-          if (intc.burnoutSpd && intc.burnRemaining <= 0) {
-            const spdRatio2  = cs / intc.burnoutSpd;
+          const refSpd2 = intc.burnoutSpd ?? cs; // fallback during burn phase
+          if (refSpd2 > 0) {
+            const spdRatio2  = cs / refSpd2;
             effectiveLatG2   = intc.maxLatG * spdRatio2 * spdRatio2;
             effectiveLatG2   = Math.max(0.5, Math.min(intc.maxLatG, effectiveLatG2));
           }
-          const maxLatAccel = effectiveLatG2 * 9.81 * turnScale2;
+          const maxLatAccel = effectiveLatG2 * 9.81; // m/s²
           const dvx = (tdx2/td3)*cs - intc.vx, dvy = (tdy2/td3)*cs - intc.vy, dvz = (tdz2/td3)*cs - intc.vz;
           const ux = intc.vx/cs, uy = intc.vy/cs, uz = intc.vz/cs;
           const parDot = dvx*ux + dvy*uy + dvz*uz;
