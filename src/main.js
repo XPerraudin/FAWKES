@@ -1,6 +1,6 @@
 // Entry point: initialises UI, canvas, and renders the first frame.
-import state from './state.js';
-import { resize, draw } from './renderer.js';
+import state, { canvas } from './state.js';
+import { resize, draw, proj } from './renderer.js';
 import { initUI, updateMotorCard, updateMapSizeDisplay, updateSideOverlay, updateScalesBtn } from './ui.js';
 import { logEvent } from './logger.js';
 
@@ -31,3 +31,18 @@ logEvent('RIGHT-CLICK → place launcher', 'info');
 
 // Render the initial empty battlefield
 draw();
+
+// Interceptor selection: click to select
+canvas.addEventListener('pointerdown', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+  for (const intc of state.interceptors) {
+    if (!intc.alive) continue;
+    const { sx, sy } = proj(intc.wx, intc.wy, intc.wz);
+    if (Math.hypot(cx - sx, cy - sy) < 18) {
+      state.selectedIntcId = intc.id;
+      break;
+    }
+  }
+});

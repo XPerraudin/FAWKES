@@ -3,6 +3,7 @@ import state from './state.js';
 
 export function logEvent(msg, type = 'info') {
   const log = document.getElementById('eventLog');
+  if (!log) return;
   const d   = document.createElement('div');
   d.className = 'ev ' + type;
   d.textContent = `[${state.simTime.toFixed(1)}s] ${msg}`;

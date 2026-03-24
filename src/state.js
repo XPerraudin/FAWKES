@@ -58,6 +58,9 @@ const state = {
   // ── Sweep ──
   sweepAborted: false,
   sweepRunning: false,
+
+  // ── Selection / telemetry ──
+  selectedIntcId: null, intcIdCounter: 0, deadInterceptors: [],
 };
 
 export default state;

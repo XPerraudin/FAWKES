@@ -5,7 +5,7 @@ import { logEvent } from './logger.js';
 import { draw } from './renderer.js';
 import { steerInterceptor } from './guidance.js';
 // NOTE: circular import with ui.js — safe because usage is in function bodies only
-import { updateHUD, updatePathsBtn } from './ui.js';
+import { updateHUD, updatePathsBtn, addInterceptorChip, markChipDead, clearRoster, renderTelemPlots } from './ui.js';
 
 // Maximum physics substep size in seconds
 const MAX_SUBSTEP = 0.016;
@@ -58,6 +58,7 @@ function loop(ts) {
   }
 
   draw();
+  renderTelemPlots();
   updateHUD();
   state.animId = requestAnimationFrame(loop);
 }
@@ -187,10 +188,12 @@ function update(dt) {
     const AERO_rho = 1.225;
     const AERO_K   = 0.5 * intc.agilCd * AERO_rho * intc.agilArea;
 
+    let telemThrust = 0, telemDrag = 0;
     if (intc.burnRemaining > 0) {
       const burnElapsed  = intc.burnTotal - intc.burnRemaining;
       const curThrust    = thrustAtTime(intc.motor, burnElapsed);
       intc.currentThrust = curThrust;
+      telemThrust = curThrust; telemDrag = AERO_K * spd3 * spd3;
 
       const propFrac     = intc.burnRemaining / intc.burnTotal;
       intc.currentMassG  = intc.dryMassG + intc.propMassG * propFrac;
@@ -218,6 +221,7 @@ function update(dt) {
       if (!intc.burnoutSpd) intc.burnoutSpd = spd3;   // record speed at burnout once
       intc.currentMassG  = intc.dryMassG;
       intc.currentThrust = 0;
+      telemDrag = AERO_K * spd3 * spd3;
       const massKg = intc.dryMassG * 0.001;
 
       if (gravOn) intc.vz -= GRAVITY * dt;
@@ -233,6 +237,7 @@ function update(dt) {
     }
 
     // Mid-flight guidance (delegated to guidance.js)
+    const vxPre = intc.vx, vyPre = intc.vy, vzPre = intc.vz;
     steerInterceptor(intc, dt);
 
     intc.wx += intc.vx*dt; intc.wy += intc.vy*dt; intc.wz += intc.vz*dt;
@@ -240,6 +245,22 @@ function update(dt) {
     intc.trail.push({wx:intc.wx, wy:intc.wy, wz:intc.wz});
     if (intc.trail.length > TRAIL_LEN) intc.trail.shift();
     if (state.frameN % 3 === 0) intc.fullPath.push({wx:intc.wx, wy:intc.wy, wz:intc.wz});
+
+    const dvx = intc.vx - vxPre, dvy = intc.vy - vyPre, dvz = intc.vz - vzPre;
+    const latAccel = Math.sqrt(dvx**2 + dvy**2 + dvz**2) / dt;
+    const latG = latAccel / 9.81;
+    intc.telem.push({
+      t:        state.simTime,
+      wx:       intc.wx,
+      wy:       intc.wy,
+      speed:    Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2),
+      accMag:   Math.sqrt(((telemThrust - telemDrag) / (intc.currentMassG * 0.001))**2),
+      thrust:   telemThrust,
+      drag:     telemDrag,
+      altitude: intc.wz,
+      latG,
+    });
+    if (intc.telem.length > 2000) intc.telem.shift();
 
     // Kill check
     if (intc.target.alive) {
@@ -249,7 +270,10 @@ function update(dt) {
 
       const killDist = intc.fragOn ? Math.max(intc.fragR, intc.target.type.killR) : intc.target.type.killR;
       if (kd < killDist) {
+        state.deadInterceptors.push({ ...intc, telem: [...intc.telem] });
+        if (state.deadInterceptors.length > 50) state.deadInterceptors.shift();
         intc.alive = false; intc.target.alive = false; state.killCount++;
+        markChipDead(intc.id);
         intc.wasKill = true;
         intc.target.wasKilled = true;
         state.killTimes.push(intc.age);
@@ -267,7 +291,11 @@ function update(dt) {
 
     // Ground hit
     if (intc.wz <= 0) {
-      intc.wz = 0; intc.alive = false;
+      intc.wz = 0;
+      state.deadInterceptors.push({ ...intc, telem: [...intc.telem] });
+      if (state.deadInterceptors.length > 50) state.deadInterceptors.shift();
+      intc.alive = false;
+      markChipDead(intc.id);
       state.explosions.push({wx:intc.wx, wy:intc.wy, wz:0, r:1, maxR:15, alpha:0.6, color:'#886600', fragR:0});
       state.craters.push({wx:intc.wx, wy:intc.wy, wz:0, id:intc.id, type:'crash'});
       const lpC = intc.targetPosAtLaunch;
@@ -277,7 +305,12 @@ function update(dt) {
       state.droneTravelLog.push(droneTravelCrash);
     }
     const W = state.mapFieldSize;
-    if (intc.wx < -400 || intc.wx > W+400 || intc.wy < -400 || intc.wy > W+400 || intc.wz > 3000) intc.alive = false;
+    if (intc.wx < -400 || intc.wx > W+400 || intc.wy < -400 || intc.wy > W+400 || intc.wz > 3000) {
+      state.deadInterceptors.push({ ...intc, telem: [...intc.telem] });
+      if (state.deadInterceptors.length > 50) state.deadInterceptors.shift();
+      intc.alive = false;
+      markChipDead(intc.id);
+    }
   }
 
   // Explosions decay
@@ -383,12 +416,12 @@ function spawnInterceptor(launcher, td, bearingOffsetRad = 0) {
     vz: Math.sin(lElev) * initSpd,
     motor, seekMode,
     target: td,
-    alive: true, trail: [], fullPath: [],
+    alive: true, trail: [], fullPath: [], telem: [],
     burnRemaining: motor.burn,
     burnTotal:     motor.burn,
     launchMassG, dryMassG, propMassG: motor.propMass,
     effectiveTurnRate,
-    age: 0, id: state.interceptors.length,
+    age: 0, id: 'IC-' + String(++state.intcIdCounter).padStart(2, '0'),
     trajectMode, fragOn, fragR,
     aimX, aimY, aimZ,
     currentMassG:    launchMassG,
@@ -400,6 +433,7 @@ function spawnInterceptor(launcher, td, bearingOffsetRad = 0) {
     terminalPhase: false,
   };
   state.interceptors.push(intcObj);
+  addInterceptorChip(intcObj.id);
   launcher.lastShot = state.simTime;
   state.totalFired++;
   state.firedLog.push({ motorKey: mKey, motorCost: motor.cost });
@@ -467,6 +501,7 @@ export function resetSim() {
   state.closestMiss = Infinity; state.killTimes = []; state.maxIntcSpd = 0; state.spawnQueue = 0; state.salvoQueue = [];
   state.totalFired = 0; state.firedLog = []; state.droneTravelLog = [];
   state.simEnded = false; state.showFullPaths = true; state.showKillsOnly = false;
+  clearRoster();
   updatePathsBtn();
   updateHUD();
   draw();

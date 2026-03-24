@@ -109,16 +109,16 @@ export function updateHUD() {
   const tot = state.hitCount + state.killCount;
   document.getElementById('hKillPct').textContent = tot > 0 ? Math.round(state.killCount / tot * 100) + '%' : '0%';
 
-  document.getElementById('ls_t').textContent  = state.drones.filter(d => d.alive).length;
-  document.getElementById('ls_i').textContent  = state.interceptors.filter(i => i.alive).length;
-  document.getElementById('ls_kr').textContent = tot > 0 ? Math.round(state.killCount / tot * 100) + '%' : '0%';
-  document.getElementById('ls_at').textContent = state.killTimes.length
+  const ls_t  = document.getElementById('ls_t');  if (ls_t)  ls_t.textContent  = state.drones.filter(d => d.alive).length;
+  const ls_i  = document.getElementById('ls_i');  if (ls_i)  ls_i.textContent  = state.interceptors.filter(i => i.alive).length;
+  const ls_kr = document.getElementById('ls_kr'); if (ls_kr) ls_kr.textContent = tot > 0 ? Math.round(state.killCount / tot * 100) + '%' : '0%';
+  const ls_at = document.getElementById('ls_at'); if (ls_at) ls_at.textContent = state.killTimes.length
     ? (state.killTimes.reduce((a, b) => a + b, 0) / state.killTimes.length).toFixed(1) + 's' : '-';
-  document.getElementById('ls_cm').textContent = state.closestMiss < Infinity
+  const ls_cm = document.getElementById('ls_cm'); if (ls_cm) ls_cm.textContent = state.closestMiss < Infinity
     ? state.closestMiss.toFixed(1) + 'm' : '-';
   const mxAlt = state.drones.reduce((m, d) => d.alive ? Math.max(m, d.wz) : m, 0);
-  document.getElementById('ls_ha').textContent = mxAlt > 0 ? Math.round(mxAlt) + 'm' : '-';
-  document.getElementById('ls_ms').textContent = state.maxIntcSpd > 0
+  const ls_ha = document.getElementById('ls_ha'); if (ls_ha) ls_ha.textContent = mxAlt > 0 ? Math.round(mxAlt) + 'm' : '-';
+  const ls_ms = document.getElementById('ls_ms'); if (ls_ms) ls_ms.textContent = state.maxIntcSpd > 0
     ? Math.round(state.maxIntcSpd * 3.6) + ' km/h' : '-';
 
   // Live mass / T-W from most recently launched burning interceptor
@@ -368,4 +368,230 @@ export function initUI() {
 
   // Window resize
   window.addEventListener('resize', () => { resize(); draw(); });
+
+  // Telemetry drawer toggle
+  const telemTab = document.getElementById('telemTab');
+  if (telemTab) {
+    telemTab.addEventListener('click', (e) => {
+      // Ignore clicks that originated inside the chip roster — those are handled by each chip
+      if (e.target.closest('#intcRoster') || e.target.closest('.intc-chip')) return;
+      const drawer = document.getElementById('telemDrawer');
+      if (!drawer) return;
+      const isCollapsed = drawer.classList.contains('collapsed');
+      drawer.classList.toggle('collapsed', !isCollapsed);
+      drawer.classList.toggle('expanded', isCollapsed);
+      const label = document.getElementById('telemTabLabel');
+      if (label) label.textContent = isCollapsed ? '▼ TELEMETRY' : '▲ TELEMETRY';
+    });
+  }
+
+  // Sidebar collapse toggle
+  const sidebarToggle = document.getElementById('sidebarToggle');
+  if (sidebarToggle) {
+    sidebarToggle.addEventListener('click', () => {
+      const sidebar = document.querySelector('.sidebar');
+      if (!sidebar) return;
+      const collapsed = sidebar.classList.toggle('collapsed-sidebar');
+      sidebarToggle.textContent = collapsed ? '▶' : '◀';
+    });
+  }
+}
+
+// ── Interceptor roster management ──
+export function addInterceptorChip(id) {
+  const roster = document.getElementById('intcRoster');
+  if (!roster) return;
+  const chip = document.createElement('div');
+  chip.className = 'intc-chip';
+  chip.dataset.id = id;
+  chip.textContent = id;
+  chip.addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.selectedIntcId = id;
+    console.log('selected:', id);
+    const drawer = document.getElementById('telemDrawer');
+    if (drawer) {
+      drawer.classList.remove('collapsed');
+      drawer.classList.add('expanded');
+      const label = document.getElementById('telemTabLabel');
+      if (label) label.textContent = '▼ TELEMETRY';
+    }
+    document.querySelectorAll('.intc-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    const header = document.getElementById('telemHeader');
+    if (header) header.textContent = `INTERCEPTOR ${id}`;
+    // Redraw canvas highlight and plots immediately (needed when sim is paused or ended)
+    draw();
+    requestAnimationFrame(renderTelemPlots);
+  });
+  roster.appendChild(chip);
+  roster.scrollLeft = roster.scrollWidth;
+}
+
+export function markChipDead(id) {
+  const chip = document.querySelector(`.intc-chip[data-id="${id}"]`);
+  if (chip) chip.classList.add('dead');
+}
+
+export function clearRoster() {
+  const roster = document.getElementById('intcRoster');
+  if (roster) roster.innerHTML = '';
+  state.selectedIntcId = null;
+  const header = document.getElementById('telemHeader');
+  if (header) header.textContent = 'NO INTERCEPTOR SELECTED';
+}
+
+// ── Live telemetry plots — called every animation frame ──
+export function renderTelemPlots() {
+  const drawer = document.getElementById('telemDrawer');
+  if (!drawer || drawer.classList.contains('collapsed')) return;
+  if (state.selectedIntcId === null) return;
+
+  // Find selected interceptor: live array first, then dead snapshot array
+  let intc = state.interceptors.find(i => i.id === state.selectedIntcId);
+  const foundInLive = !!intc;
+  if (!intc) intc = state.deadInterceptors.find(i => i.id === state.selectedIntcId);
+
+  const header = document.getElementById('telemHeader');
+  if (!intc) {
+    if (header) { header.style.color = ''; header.textContent = 'NO INTERCEPTOR SELECTED'; }
+    return;
+  }
+
+  const telem = intc.telem;
+  // Terminated if found alive in live array with alive:false, or found only in dead snapshot array
+  const isTerminated = foundInLive ? !intc.alive : true;
+
+  if (header) {
+    if (!isTerminated) {
+      const lastT  = telem.length ? telem[telem.length - 1] : null;
+      const spd    = lastT ? Math.round(lastT.speed) : 0;
+      const maxG   = telem.reduce((m, r) => Math.max(m, r.latG), 0).toFixed(1);
+      header.style.color = '';
+      header.textContent = `[${intc.id}] — ${intc.motor.name} | ${intc.seekMode} | age ${intc.age.toFixed(1)}s | spd ${spd}m/s | maxG ${maxG}g`;
+    } else {
+      const maxSpd = telem.reduce((m, r) => Math.max(m, r.speed), 0);
+      const maxG   = telem.reduce((m, r) => Math.max(m, r.latG),  0).toFixed(1);
+      const tStart = telem.length ? telem[0].t : 0;
+      const tEnd   = telem.length ? telem[telem.length - 1].t : 0;
+      header.style.color = '#ff2233';
+      header.textContent = `[${intc.id}] — [TERMINATED] | flight ${(tEnd - tStart).toFixed(1)}s | max spd ${Math.round(maxSpd)}m/s | max G ${maxG}g`;
+    }
+  }
+
+  // Size each plot canvas to its container (handles resize)
+  ['plotVelocity', 'plotAccel', 'plotThrustDrag', 'plotAltG'].forEach(id => {
+    const c = document.getElementById(id);
+    if (c) { c.width = c.clientWidth; c.height = c.clientHeight; }
+  });
+
+  // Helper: draw text with a dark backing rect for readability over plot lines
+  function labelWithBg(ctx, text, x, y, color, alignRight) {
+    ctx.font = '8px Share Tech Mono, monospace';
+    const tw = ctx.measureText(text).width;
+    const lx = alignRight ? x - tw - 2 : x;
+    ctx.fillStyle = 'rgba(6,10,14,0.78)';
+    ctx.fillRect(lx - 1, y - 9, tw + 4, 11);
+    ctx.fillStyle = color;
+    ctx.textAlign = alignRight ? 'right' : 'left';
+    ctx.fillText(text, x, y);
+    ctx.textAlign = 'left';
+  }
+
+  function drawPlot(canvas, telem, series, title) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    if (W === 0 || H === 0) return;
+
+    // Background
+    ctx.fillStyle = '#060a0e';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines — slightly brighter so they read as reference lines
+    ctx.strokeStyle = '#1a4028';
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i++) {
+      const gy = H * i / 5;
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+    }
+
+    // Title — drawn with backing rect so it stays readable when lines pass under it
+    ctx.font = '8px Orbitron, monospace';
+    const tw = ctx.measureText(title).width;
+    ctx.fillStyle = 'rgba(6,10,14,0.78)';
+    ctx.fillRect(2, 1, tw + 5, 14);
+    ctx.fillStyle = '#00cc55';
+    ctx.textAlign = 'left';
+    ctx.fillText(title, 4, 12);
+
+    if (!telem || telem.length < 2) return;
+
+    const tMin   = telem[0].t;
+    const tMax   = telem[telem.length - 1].t;
+    const tRange = tMax - tMin || 1;
+
+    // Draw each series then its axis labels
+    for (const s of series) {
+      const yMin   = s.yMin;
+      const yMax   = s.yMax !== null ? s.yMax : (telem.reduce((m, r) => Math.max(m, r[s.key]), 0) || 1);
+      const yRange = yMax - yMin || 1;
+
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      for (let i = 0; i < telem.length; i++) {
+        const px = (telem[i].t - tMin) / tRange * W;
+        const py = H - (telem[i][s.key] - yMin) / yRange * H;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      // Axis labels: left series uses left edge below title; right-axis series uses right edge
+      const maxLabel = yMax % 1 === 0 ? String(yMax) : yMax.toFixed(1);
+      const minLabel = yMin === 0 ? '0' : yMin.toFixed(0);
+      if (s.rightAxis) {
+        labelWithBg(ctx, maxLabel, W - 2, 10,     s.color, true);
+        labelWithBg(ctx, minLabel, W - 2, H - 3,  s.color, true);
+      } else {
+        labelWithBg(ctx, maxLabel, 3, 25,     s.color, false);  // below title
+        labelWithBg(ctx, minLabel, 3, H - 3,  s.color, false);
+      }
+    }
+
+    // Thin cursor line at rightmost data point — dim so it doesn't obscure the data
+    const lx = (telem[telem.length - 1].t - tMin) / tRange * W;
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, H); ctx.stroke();
+  }
+
+  // For plotThrustDrag: shared autoscale across both series
+  const sharedTDMax = telem.length >= 2
+    ? (telem.reduce((m, r) => Math.max(m, r.thrust, r.drag), 0) || 1)
+    : null;
+
+  drawPlot(document.getElementById('plotVelocity'), telem,
+    [{ key: 'speed',  color: '#00eeff', yMin: 0, yMax: 600 }],
+    'VELOCITY m/s');
+
+  drawPlot(document.getElementById('plotAccel'), telem,
+    [{ key: 'accMag', color: '#ffcc00', yMin: 0, yMax: 300 }],
+    'ACCEL m/s²');
+
+  drawPlot(document.getElementById('plotThrustDrag'), telem,
+    [
+      { key: 'thrust', color: '#00ff88', yMin: 0, yMax: sharedTDMax },
+      { key: 'drag',   color: '#ff2233', yMin: 0, yMax: sharedTDMax },
+    ],
+    'THRUST / DRAG N');
+
+  drawPlot(document.getElementById('plotAltG'), telem,
+    [
+      { key: 'altitude', color: '#33aaff', yMin: 0, yMax: 500 },
+      { key: 'latG',     color: '#ff8800', yMin: 0, yMax: 25, rightAxis: true },
+    ],
+    'ALT m / LAT-G g');
 }

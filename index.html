@@ -75,8 +75,15 @@
   .sv.y { color:var(--yellow); }
   .sv.b { color:var(--blue); }
   .sv.c { color:var(--cyan); }
-  .canvas-wrap { flex:1; display:flex; flex-direction:column; overflow:hidden; position:relative; }
-  canvas { flex:1; display:block; cursor:crosshair; }
+  .canvas-col {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    min-width: 0;
+    position: relative;
+  }
+  canvas { flex:1; display:block; cursor:crosshair; min-height:0; }
 
   /* ── Tooltip ── */
   #tip {
@@ -184,17 +191,120 @@
   .sw-cb { font-size:8px; color:#77ffaa; display:inline-block; margin:1px 0; cursor:pointer; }
   .sw-cb input { accent-color:#ffcc00; margin-right:4px; }
   .brand-overlay {
-    position:absolute; top:12px; left:12px;
-    display:flex; flex-direction:column; align-items:flex-start; gap:4px;
-    pointer-events:none; z-index:10;
+    display:flex; flex-direction:column; align-items:flex-end; gap:2px;
+    pointer-events:none; flex-shrink:0;
   }
-  .brand-logo-row { display:flex; align-items:center; gap:8px; }
-  .brand-logo { width:38px; height:38px; opacity:0.88; filter:drop-shadow(0 0 5px rgba(255,255,255,0.25)); }
+  .brand-logo-row { display:flex; align-items:center; gap:6px; }
+  .brand-logo { width:24px; height:24px; opacity:0.88; filter:drop-shadow(0 0 5px rgba(255,255,255,0.25)); }
   .brand-name {
-    font-family:'Orbitron',sans-serif; font-size:13px; font-weight:700;
+    font-family:'Orbitron',sans-serif; font-size:10px; font-weight:700;
     color:#ffffff; letter-spacing:3px; opacity:0.9;
   }
-  .brand-credit { font-size:8px; color:rgba(255,255,255,0.4); letter-spacing:2px; padding-left:2px; }
+  .brand-credit { font-family:'Orbitron',sans-serif; font-size:7px; color:rgba(255,255,255,0.4); letter-spacing:2px; }
+
+  /* ── Sidebar collapse toggle ── */
+  .sidebar-toggle {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    cursor: pointer;
+    padding: 2px 5px;
+    z-index: 10;
+    transition: all 0.15s;
+  }
+  .sidebar-toggle:hover { border-color: var(--cyan); color: var(--cyan); }
+  .sidebar { position: relative; transition: width 0.2s ease, min-width 0.2s ease; }
+  .sidebar.collapsed-sidebar { width: 24px !important; min-width: 24px !important; overflow: hidden; }
+
+  /* ── Telemetry Drawer ── */
+  .telem-drawer {
+    width: 100%;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    transition: height 0.2s ease;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .telem-drawer.collapsed { height: 28px; }
+  .telem-drawer.expanded  { height: 240px; }
+
+  .telem-tab {
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    gap: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+  }
+  .telem-tab:hover { background: rgba(0,255,136,0.04); }
+
+  #telemTabLabel {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 8px;
+    letter-spacing: 3px;
+    color: var(--green-dim);
+    white-space: nowrap;
+  }
+
+  .intc-roster {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    flex: 1;
+  }
+
+  .intc-chip {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 8px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.1s;
+  }
+  .intc-chip:hover  { border-color: var(--green-dim); color: var(--green-dim); }
+  .intc-chip.active { border-color: var(--cyan); color: var(--cyan); }
+  .intc-chip.dead   { opacity: 0.4; }
+
+  .telem-body {
+    height: 192px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .telem-header {
+    height: 20px;
+    flex-shrink: 0;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 8px;
+    color: var(--green-dim);
+    padding: 3px 10px;
+    border-bottom: 1px solid var(--border);
+    letter-spacing: 1px;
+  }
+
+  .telem-plots {
+    height: 172px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 4px;
+  }
+
+  .telem-plots canvas {
+    width: 100%;
+    height: 164px;
+    display: block;
+  }
 </style>
 </head>
 <body>
@@ -214,6 +324,13 @@
     <span>✓ KILLS: <span class="hv" id="hKills">0</span></span>
     <span>KILL%: <span class="hv" id="hKillPct">0%</span></span>
   </div>
+  <div class="brand-overlay">
+    <div class="brand-logo-row">
+      <img src="/VectorStagOnWhite.svg" class="brand-logo" alt="StagOn Logo">
+      <span class="brand-name">STAGON</span>
+    </div>
+    <span class="brand-credit">CREATED BY XAVIER PERRAUDIN</span>
+  </div>
 </header>
 <div class="main">
 
@@ -222,6 +339,7 @@
 
 <!-- SIDEBAR -->
 <div class="sidebar">
+  <button id="sidebarToggle" class="sidebar-toggle">◀</button>
   <div>
     <div class="ptitle">▸ MAP SIZE</div>
     <div class="cg">
@@ -358,14 +476,7 @@
 </div>
 
 <!-- CANVAS -->
-<div class="canvas-wrap">
-  <div class="brand-overlay">
-    <div class="brand-logo-row">
-      <img src="/VectorStagOnWhite.svg" class="brand-logo" alt="StagOn Logo">
-      <span class="brand-name">STAGON</span>
-    </div>
-    <span class="brand-credit">CREATED BY XAVIER PERRAUDIN</span>
-  </div>
+<div class="canvas-col">
   <canvas id="simCanvas"></canvas>
   <button id="isoResetBtn">↺ RESET VIEW</button>
   <button id="pathsToggleBtn">PATHS: ON</button>
@@ -383,61 +494,23 @@
     <button class="vtbtn" id="vbSide">SIDE (XZ)</button>
     <span style="margin-left:auto;font-size:8px;color:var(--dim)" id="footCoords">—</span>
   </div>
-</div>
-
-<!-- RIGHT PANEL -->
-<div class="rpanel">
-  <div>
-    <div class="ptitle">▸ LEGEND</div>
-    <div class="legend">
-      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">THREATS</div>
-      <div class="li"><div class="dot" style="background:#ff2233;color:#ff2233"></div><span class="li-label" style="color:#ff8899">Shahed-136</span><span class="li-sub">kamikaze UAV</span></div>
-      <div class="li"><div class="dot" style="background:#ff7700;color:#ff7700"></div><span class="li-label" style="color:#ffaa66">FPV Quad</span><span class="li-sub">fast / agile</span></div>
-      <div class="li"><div class="dot" style="background:#ffaa33;color:#ffaa33"></div><span class="li-label" style="color:#ffd088">DJI Phantom</span><span class="li-sub">commercial</span></div>
-      <div class="li-sep"></div>
-      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">FRIENDLY</div>
-      <div class="li"><div class="dot" style="background:#00ff88;color:#00ff88"></div><span class="li-label" style="color:#88ffcc">Interceptor</span><span class="li-sub">rocket</span></div>
-      <div class="li"><div class="dot" style="background:#33aaff;color:#33aaff"></div><span class="li-label" style="color:#88ccff">Target</span><span class="li-sub">ground asset</span></div>
-      <div class="li"><div class="dot" style="background:#cccc00;color:#cccc00"></div><span class="li-label" style="color:#eeee66">Launcher</span><span class="li-sub">right-click</span></div>
-      <div class="li-sep"></div>
-      <div style="font-size:8px;color:#3a6648;letter-spacing:1px;padding:2px 0 1px">IMPACT ICONS</div>
-      <div class="li">
-        <svg width="13" height="13" viewBox="0 0 13 13" style="flex-shrink:0"><line x1="2" y1="2" x2="11" y2="11" stroke="#667" stroke-width="2"/><line x1="11" y1="2" x2="2" y2="11" stroke="#667" stroke-width="2"/></svg>
-        <span class="li-label" style="color:#778899">Ground crash</span>
-      </div>
-      <div class="li">
-        <svg width="13" height="13" viewBox="0 0 13 13" style="flex-shrink:0"><line x1="6.5" y1="1" x2="6.5" y2="12" stroke="#44dd77" stroke-width="2"/><line x1="1" y1="6.5" x2="12" y2="6.5" stroke="#44dd77" stroke-width="2"/></svg>
-        <span class="li-label" style="color:#44dd77">Kill confirmed</span>
-      </div>
+  <div id="telemDrawer" class="telem-drawer collapsed">
+    <div id="telemTab" class="telem-tab">
+      <span id="telemTabLabel">▲ TELEMETRY</span>
+      <div id="intcRoster" class="intc-roster"></div>
     </div>
-  </div>
-  <div>
-    <div class="ptitle">▸ LIVE STATS</div>
-    <div class="srow"><span class="sl">THREATS ALIVE</span><span class="sv r" id="ls_t">0</span></div>
-    <div class="srow"><span class="sl">INTERCEPTORS</span><span class="sv" id="ls_i">0</span></div>
-    <div class="srow"><span class="sl">KILL RATE</span><span class="sv" id="ls_kr">0%</span></div>
-    <div class="srow"><span class="sl">AVG KILL TIME</span><span class="sv" id="ls_at">-</span></div>
-    <div class="srow"><span class="sl">CLOSEST MISS</span><span class="sv y" id="ls_cm">-</span></div>
-    <div class="srow"><span class="sl">HIGHEST THREAT ALT</span><span class="sv c" id="ls_ha">-</span></div>
-    <div class="srow"><span class="sl">MAX INTC SPEED</span><span class="sv" id="ls_ms">-</span></div>
-  </div>
-  <div>
-    <div class="ptitle">▸ EVENT LOG <span class="blink">█</span></div>
-    <div class="elog" id="eventLog"></div>
-  </div>
-  <div>
-    <div class="ptitle">▸ 3D PHYSICS</div>
-    <div style="font-size:8px;color:var(--dim);line-height:1.5">
-      Full 3D kinematics: vx,vy,vz updated each tick. Interceptor burn: thrust along velocity vector. Coast: gravity 9.81m/s² pulls vz down. Drones hold altitude via proportional climb control. Shahed dives in terminal phase. Kill = 3D Euclidean distance &lt; 12m.
-    </div>
-  </div>
-  <div>
-    <div class="ptitle">▸ CONTROLS</div>
-    <div style="font-size:8px;color:var(--dim);line-height:1.6">
-      LEFT-CLICK → move target<br>RIGHT-CLICK → place launcher<br>TOP/ISO/SIDE → change view
+    <div id="telemBody" class="telem-body">
+      <div id="telemHeader" class="telem-header">NO INTERCEPTOR SELECTED</div>
+      <div class="telem-plots">
+        <canvas id="plotVelocity"></canvas>
+        <canvas id="plotAccel"></canvas>
+        <canvas id="plotThrustDrag"></canvas>
+        <canvas id="plotAltG"></canvas>
+      </div>
     </div>
   </div>
 </div>
+
 </div>
 <footer>
   <span>SCALE: 1px=2m | KILL RADIUS: 12m (3D point contact) | GRAVITY: 9.81 m/s² on coast phase</span>

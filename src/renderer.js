@@ -783,23 +783,58 @@ export function draw() {
 
   // Interceptors
   for (const intc of state.interceptors) {
-    if (!intc.alive) continue;
-    const p    = proj(intc.wx, intc.wy, intc.wz);
-    drawInterceptor(p.sx, p.sy, intc);
-    const lcol = intcColor(intc);
-    ctx.fillStyle = lcol; ctx.font = '9px Share Tech Mono';
-    ctx.fillText(`I${intc.id} ${Math.round(intc.wz)}m`, p.sx+9, p.sy-5);
-    if (intc.target.alive) {
-      const tp = proj(intc.target.wx, intc.target.wy, intc.target.wz);
-      ctx.strokeStyle = 'rgba(0,255,136,0.12)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
-      ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(tp.sx, tp.sy); ctx.stroke();
-      ctx.setLineDash([]);
+    const isSelected = state.selectedIntcId !== null && intc.id === state.selectedIntcId;
+    // Skip dead interceptors unless they are the selected one (show halo/path for terminated selection)
+    if (!intc.alive && !isSelected) continue;
+    const p = proj(intc.wx, intc.wy, intc.wz);
+
+    if (state.selectedIntcId !== null && !isSelected) {
+      ctx.globalAlpha = 0.2;
+    } else {
+      ctx.globalAlpha = 1.0;
     }
-    if (intc.fragOn) {
-      const rc = intc.burnRemaining > 0 ? 'rgba(255,170,0,0.35)' : 'rgba(192,120,48,0.35)';
-      ctx.strokeStyle = rc; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(p.sx, p.sy, worldR(intc.fragR), 0, Math.PI*2); ctx.stroke();
+
+    if (isSelected) {
+      // Pulsing cyan halo
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, 14, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,238,255,${0.15 + 0.1 * Math.sin(state.simTime * 4)})`;
+      ctx.fill();
+      // Historical telem path
+      if (intc.telem.length >= 2) {
+        ctx.save();
+        ctx.strokeStyle = '#00eeff'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+        ctx.beginPath();
+        const tp0 = proj(intc.telem[0].wx, intc.telem[0].wy, intc.telem[0].altitude);
+        ctx.moveTo(tp0.sx, tp0.sy);
+        for (let i = 1; i < intc.telem.length; i++) {
+          const tpi = proj(intc.telem[i].wx, intc.telem[i].wy, intc.telem[i].altitude);
+          ctx.lineTo(tpi.sx, tpi.sy);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
     }
+
+    if (intc.alive) {
+      drawInterceptor(p.sx, p.sy, intc);
+      const lcol = intcColor(intc);
+      ctx.fillStyle = lcol; ctx.font = '9px Share Tech Mono';
+      ctx.fillText(`I${intc.id} ${Math.round(intc.wz)}m`, p.sx+9, p.sy-5);
+      if (intc.target.alive) {
+        const tp = proj(intc.target.wx, intc.target.wy, intc.target.wz);
+        ctx.strokeStyle = 'rgba(0,255,136,0.12)'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
+        ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(tp.sx, tp.sy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (intc.fragOn) {
+        const rc = intc.burnRemaining > 0 ? 'rgba(255,170,0,0.35)' : 'rgba(192,120,48,0.35)';
+        ctx.strokeStyle = rc; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, worldR(intc.fragR), 0, Math.PI*2); ctx.stroke();
+      }
+    }
+
+    ctx.globalAlpha = 1.0;
   }
 
   drawAltStrip();
