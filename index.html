@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Drone Intercept Simulation 3D v04.12</title>
+<title>Drone Intercept Simulation 3D v04.13</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
   :root {
@@ -311,7 +311,7 @@
 <div class="scanline"></div>
 <header>
   <div>
-    <div class="title">INTERCEPT-SIM // v04.12 — 3D</div>
+    <div class="title">INTERCEPT-SIM // v04.13 — 3D</div>
     <div class="subtitle">BALLISTIC INTERCEPT VALIDATION WITH ALTITUDE AXIS + GRAVITY</div>
   </div>
   <div class="hud-bar">
@@ -391,13 +391,12 @@
       <input type="range" id="payloadMass" min="0" max="2000" step="50" value="0">
       <label data-tip="0g = passive fins only, no steering, ballistic flight. 12g = hobby servo-actuated fins (realistic default). 25g = full canard + TVC. Higher authority costs drag, area, and mass.">AIRFRAME AGILITY (g): <span class="vd" id="vAgility">12</span> <span style="font-size:8px;color:#ff4444;display:none" id="vPassiveWarn">PASSIVE: guidance disabled</span></label>
       <input type="range" id="agilityG" min="0" max="25" step="2.5" value="12">
-      <label data-tip="Controls both where the rocket aims at launch and how it steers mid-flight. Ballistic: fixed vector, no correction. Pure Pursuit: always turns toward the drone's live position — aggressive but can overshoot. Prop Nav: smoother proportional steering toward live position. Lead + PN: predicts where the drone will be at time-of-flight, launches toward that point, then uses PN to refine — most efficient.">SEEK MODE</label>
+      <label data-tip="Controls both where the rocket aims at launch and how it steers mid-flight. Ballistic: fixed vector, no correction. Pure Pursuit: always turns toward the drone's current position — simple baseline, can tail-chase. PN: true proportional navigation steers on line-of-sight rotation rate for collision-course geometry. Lead+PN: honest launch lead prediction plus PN mid-flight plus boosted terminal gain — best performer.">SEEK MODE</label>
       <select id="seekMode">
-        <option value="ballistic">Ballistic — fixed vector, no steering</option>
-        <option value="pursuit">Pure Pursuit — track current position</option>
-        <option value="pn">Prop. Nav — smooth intercept steering</option>
-        <option value="lead" selected>Lead + PN — predict position, then refine</option>
-        <option value="lead_terminal">Lead + PN + Terminal — predict, refine, then pure pursuit final 35m</option>
+        <option value="ballistic">Ballistic — no steering</option>
+        <option value="pursuit">Pure pursuit — chase current position</option>
+        <option value="pn">Proportional nav — collision course steering</option>
+        <option value="lead_pn" selected>Lead + PN — lead launch, PN mid-flight, boosted terminal</option>
       </select>
       <label data-tip="Direct: rocket flies straight toward the intercept point. Lofted: rocket launches at a steeper angle, arcing above the drone's flight path and descending onto it from above — harder for a drone to evade and reduces ground fratricide risk.">TRAJECTORY MODE</label>
       <select id="trajectMode">
@@ -506,6 +505,8 @@
         <canvas id="plotAccel"></canvas>
         <canvas id="plotThrustDrag"></canvas>
         <canvas id="plotAltG"></canvas>
+        <canvas id="plotEffG"></canvas>
+        <canvas id="plotTurnRate"></canvas>
       </div>
     </div>
   </div>
@@ -640,9 +641,8 @@
       </div>
       <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="ballistic"> Ballistic</label><br>
       <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="pursuit"> Pure Pursuit</label><br>
-      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="pn"> Prop Nav</label><br>
-      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="lead" checked> Lead+PN</label><br>
-      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="lead_terminal"> Lead+PN+Terminal</label>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="pn"> Proportional Nav</label><br>
+      <label class="sw-cb"><input type="checkbox" data-group="seekmode" value="lead_pn" checked> Lead+PN</label>
     </div>
 
     <!-- TRAJECTORY MODE -->

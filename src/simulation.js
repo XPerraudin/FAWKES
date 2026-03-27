@@ -238,7 +238,31 @@ function update(dt) {
 
     // Mid-flight guidance (delegated to guidance.js)
     const vxPre = intc.vx, vyPre = intc.vy, vzPre = intc.vz;
-    steerInterceptor(intc, dt);
+    const steerResult = steerInterceptor(intc, dt);
+
+    // ── Induced drag: turning costs energy ──
+    // Lateral G from the steer step → AoA-induced drag penalty.
+    const dvxS = intc.vx - vxPre, dvyS = intc.vy - vyPre, dvzS = intc.vz - vzPre;
+    const latAccelActual = Math.sqrt(dvxS**2 + dvyS**2 + dvzS**2) / dt;  // m/s²
+    if (latAccelActual > 0.1) {
+      const spdNow = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
+      const K_INDUCED = 0.02;
+      const spdLoss = K_INDUCED * latAccelActual * dt;  // m/s of speed to shed
+      if (spdNow > 1.0 && spdLoss < spdNow * 0.5) {    // safety: never lose >50% in one tick
+        const f = (spdNow - spdLoss) / spdNow;
+        intc.vx *= f; intc.vy *= f; intc.vz *= f;
+      }
+    }
+
+    // Compute turn rate in °/s from velocity direction change
+    const spdPost = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
+    const spdPreV = Math.sqrt(vxPre**2 + vyPre**2 + vzPre**2);
+    let turnRateDeg = 0;
+    if (spdPost > 0.1 && spdPreV > 0.1) {
+      const dot = (vxPre*intc.vx + vyPre*intc.vy + vzPre*intc.vz) / (spdPreV * spdPost);
+      const clampedDot = Math.max(-1, Math.min(1, dot));
+      turnRateDeg = (Math.acos(clampedDot) / dt) * (180 / Math.PI);
+    }
 
     intc.wx += intc.vx*dt; intc.wy += intc.vy*dt; intc.wz += intc.vz*dt;
     if (intc.wz > intc.maxAlt) intc.maxAlt = intc.wz;
@@ -249,16 +273,20 @@ function update(dt) {
     const dvx = intc.vx - vxPre, dvy = intc.vy - vyPre, dvz = intc.vz - vzPre;
     const latAccel = Math.sqrt(dvx**2 + dvy**2 + dvz**2) / dt;
     const latG = latAccel / 9.81;
+    const curSpd = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
     intc.telem.push({
-      t:        state.simTime,
-      wx:       intc.wx,
-      wy:       intc.wy,
-      speed:    Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2),
-      accMag:   Math.sqrt(((telemThrust - telemDrag) / (intc.currentMassG * 0.001))**2),
-      thrust:   telemThrust,
-      drag:     telemDrag,
-      altitude: intc.wz,
+      t:             state.simTime,
+      wx:            intc.wx,
+      wy:            intc.wy,
+      speed:         curSpd,
+      accMag:        Math.sqrt(((telemThrust - telemDrag) / (intc.currentMassG * 0.001))**2),
+      thrust:        telemThrust,
+      drag:          telemDrag,
+      altitude:      intc.wz,
       latG,
+      effectiveLatG: steerResult.effectiveLatG,
+      spdRatio:      intc.burnoutSpd ? (curSpd / intc.burnoutSpd) : 1.0,
+      turnRate:      turnRateDeg,
     });
     if (intc.telem.length > 2000) intc.telem.shift();
 
@@ -376,15 +404,16 @@ function spawnInterceptor(launcher, td, bearingOffsetRad = 0) {
   const fragOn      = document.getElementById('fragEnabled').checked;
   const fragR       = parseInt(document.getElementById('fragRadius').value);
 
-  // Aim point at launch
+  // Honest launch lead for all guided modes except ballistic
   let aimX = td.wx, aimY = td.wy, aimZ = td.wz;
-  if (seekMode === 'lead') {
+  if (seekMode !== 'ballistic') {
     const dx = td.wx - launcher.wx, dy = td.wy - launcher.wy, dz = td.wz - launcher.wz;
     const d3  = Math.sqrt(dx*dx + dy*dy + dz*dz);
-    const tof = d3 / (motor.maxSpd * 0.65);
-    aimX = td.wx + td.vx * tof * 0.55;
-    aimY = td.wy + td.vy * tof * 0.55;
-    aimZ = Math.max(10, td.wz + td.vz * tof * 0.55);
+    const estAvgSpd = motor.maxSpd * 0.6;
+    const tof = d3 / Math.max(estAvgSpd, 1);
+    aimX = td.wx + td.vx * tof;
+    aimY = td.wy + td.vy * tof;
+    aimZ = Math.max(10, td.wz + td.vz * tof);
   }
 
   const ddx = aimX - launcher.wx, ddy = aimY - launcher.wy, ddz = aimZ - launcher.wz;
@@ -432,6 +461,12 @@ function spawnInterceptor(launcher, td, bearingOffsetRad = 0) {
     targetPosAtLaunch: { wx: td.wx, wy: td.wy, wz: td.wz },
     terminalPhase: false,
   };
+  // Initial LOS for PN computation (first tick will compute rate from this)
+  const iLosX = aimX - launcher.wx, iLosY = aimY - launcher.wy, iLosZ = (aimZ || td.wz) - (launcher.wz + 1);
+  const iLosR = Math.sqrt(iLosX*iLosX + iLosY*iLosY + iLosZ*iLosZ) || 1;
+  intcObj.prevLosUx = iLosX / iLosR;
+  intcObj.prevLosUy = iLosY / iLosR;
+  intcObj.prevLosUz = iLosZ / iLosR;
   state.interceptors.push(intcObj);
   addInterceptorChip(intcObj.id);
   launcher.lastShot = state.simTime;
@@ -706,12 +741,13 @@ function runHeadlessCombination(params, droneCount, seed) {
     const hDistH = Math.sqrt(ddx*ddx + ddy*ddy);
 
     let aimX = td.wx, aimY = td.wy, aimZ = td.wz;
-    if (seekMode === 'lead' || seekMode === 'lead_terminal') {
+    if (seekMode !== 'ballistic') {
       const d3  = Math.sqrt(ddx*ddx + ddy*ddy + ddz*ddz);
-      const tof = d3 / (motor.maxSpd * 0.65);
-      aimX = td.wx + td.vx * tof * 0.55;
-      aimY = td.wy + td.vy * tof * 0.55;
-      aimZ = Math.max(10, td.wz + td.vz * tof * 0.55);
+      const estAvgSpd = motor.maxSpd * 0.6;
+      const tof = d3 / Math.max(estAvgSpd, 1);
+      aimX = td.wx + td.vx * tof;
+      aimY = td.wy + td.vy * tof;
+      aimZ = Math.max(10, td.wz + td.vz * tof);
     }
 
     const adx = aimX - launcher.wx, ady = aimY - launcher.wy, adz = aimZ - launcher.wz;
@@ -746,6 +782,13 @@ function runHeadlessCombination(params, droneCount, seed) {
       currentMassG: launchMassG, maxAlt: 1, agilCd, agilArea, maxLatG,
       terminalPhase: false,
     });
+    // Initial LOS for PN
+    const hi = hIntcs[hIntcs.length - 1];
+    const hiLosX = aimX - launcher.wx, hiLosY = aimY - launcher.wy, hiLosZ = (aimZ || td.wz) - (launcher.wz + 1);
+    const hiLosR = Math.sqrt(hiLosX*hiLosX + hiLosY*hiLosY + hiLosZ*hiLosZ) || 1;
+    hi.prevLosUx = hiLosX / hiLosR;
+    hi.prevLosUy = hiLosY / hiLosR;
+    hi.prevLosUz = hiLosZ / hiLosR;
     launcher.lastShot = hSimTime;
     hTotalFired++;
   };
@@ -859,43 +902,20 @@ function runHeadlessCombination(params, droneCount, seed) {
         }
       }
 
-      // Headless steering
-      if (intc.maxLatG > 0 && intc.seekMode !== 'ballistic' && intc.target.alive) {
-        if (intc.seekMode === 'lead_terminal' && !intc.terminalPhase) {
-          const ttdx = intc.target.wx - intc.wx, ttdy = intc.target.wy - intc.wy, ttdz = intc.target.wz - intc.wz;
-          if (Math.sqrt(ttdx*ttdx + ttdy*ttdy + ttdz*ttdz) <= 35) intc.terminalPhase = true;
-        }
-        let stX, stY, stZ;
-        if (intc.seekMode === 'lead_terminal' && intc.terminalPhase) {
-          stX = intc.target.wx; stY = intc.target.wy; stZ = intc.target.wz;
-        } else if (intc.trajectMode === 'lofted' && intc.vz > 0) {
-          stX = intc.aimX; stY = intc.aimY; stZ = intc.aimZ;
-        } else {
-          stX = intc.target.wx; stY = intc.target.wy; stZ = intc.target.wz;
-        }
-        const tdx2 = stX-intc.wx, tdy2 = stY-intc.wy, tdz2 = stZ-intc.wz;
-        const td3 = Math.sqrt(tdx2*tdx2 + tdy2*tdy2 + tdz2*tdz2);
-        const cs  = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
-        if (td3 > 0.1 && cs > 0.1) {
-          // Dynamic-pressure scaling: unconditional, same logic as guidance.js
-          let effectiveLatG2 = intc.maxLatG;
-          const refSpd2 = intc.burnoutSpd ?? cs; // fallback during burn phase
-          if (refSpd2 > 0) {
-            const spdRatio2  = cs / refSpd2;
-            effectiveLatG2   = intc.maxLatG * spdRatio2 * spdRatio2;
-            effectiveLatG2   = Math.max(0.5, Math.min(intc.maxLatG, effectiveLatG2));
-          }
-          const maxLatAccel = effectiveLatG2 * 9.81; // m/s²
-          const dvx = (tdx2/td3)*cs - intc.vx, dvy = (tdy2/td3)*cs - intc.vy, dvz = (tdz2/td3)*cs - intc.vz;
-          const ux = intc.vx/cs, uy = intc.vy/cs, uz = intc.vz/cs;
-          const parDot = dvx*ux + dvy*uy + dvz*uz;
-          const px = dvx-parDot*ux, py = dvy-parDot*uy, pz = dvz-parDot*uz;
-          const pm = Math.sqrt(px*px + py*py + pz*pz);
-          const maxPdv = maxLatAccel * DT;
-          const sc = pm > maxPdv ? maxPdv/pm : 1.0;
-          intc.vx += px*sc; intc.vy += py*sc; intc.vz += pz*sc;
-          const ns = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
-          if (ns > 0.1) { const f = cs/ns; intc.vx *= f; intc.vy *= f; intc.vz *= f; }
+      // Headless steering — uses same guidance function as visual sim
+      const vxH = intc.vx, vyH = intc.vy, vzH = intc.vz;
+      steerInterceptor(intc, DT, true);
+
+      // ── Induced drag (headless) ──
+      const dvxH = intc.vx - vxH, dvyH = intc.vy - vyH, dvzH = intc.vz - vzH;
+      const latAccH = Math.sqrt(dvxH**2 + dvyH**2 + dvzH**2) / DT;
+      if (latAccH > 0.1) {
+        const spdH = Math.sqrt(intc.vx**2 + intc.vy**2 + intc.vz**2);
+        const K_INDUCED = 0.02;
+        const spdLossH = K_INDUCED * latAccH * DT;
+        if (spdH > 1.0 && spdLossH < spdH * 0.5) {
+          const fH = (spdH - spdLossH) / spdH;
+          intc.vx *= fH; intc.vy *= fH; intc.vz *= fH;
         }
       }
 

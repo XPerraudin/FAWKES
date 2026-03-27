@@ -467,8 +467,9 @@ export function renderTelemPlots() {
       const lastT  = telem.length ? telem[telem.length - 1] : null;
       const spd    = lastT ? Math.round(lastT.speed) : 0;
       const maxG   = telem.reduce((m, r) => Math.max(m, r.latG), 0).toFixed(1);
+      const lastEffG = telem.length ? (telem[telem.length - 1].effectiveLatG ?? 0).toFixed(1) : '0.0';
       header.style.color = '';
-      header.textContent = `[${intc.id}] — ${intc.motor.name} | ${intc.seekMode} | age ${intc.age.toFixed(1)}s | spd ${spd}m/s | maxG ${maxG}g`;
+      header.textContent = `[${intc.id}] — ${intc.motor.name} | ${intc.seekMode} | age ${intc.age.toFixed(1)}s | spd ${spd}m/s | maxG ${maxG}g | effG ${lastEffG}g`;
     } else {
       const maxSpd = telem.reduce((m, r) => Math.max(m, r.speed), 0);
       const maxG   = telem.reduce((m, r) => Math.max(m, r.latG),  0).toFixed(1);
@@ -480,10 +481,20 @@ export function renderTelemPlots() {
   }
 
   // Size each plot canvas to its container (handles resize)
-  ['plotVelocity', 'plotAccel', 'plotThrustDrag', 'plotAltG'].forEach(id => {
+  ['plotVelocity', 'plotAccel', 'plotThrustDrag', 'plotAltG', 'plotEffG', 'plotTurnRate'].forEach(id => {
     const c = document.getElementById(id);
     if (c) { c.width = c.clientWidth; c.height = c.clientHeight; }
   });
+
+  // Auto-scale helper: round up to a nice number, floor at 1
+  function autoScaleMax(values) {
+    if (!values.length) return 1;
+    const raw = Math.max(...values);
+    if (raw <= 0) return 1;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const nice = Math.ceil(raw / mag) * mag;
+    return Math.max(nice, mag);
+  }
 
   // Helper: draw text with a dark backing rect for readability over plot lines
   function labelWithBg(ctx, text, x, y, color, alignRight) {
@@ -539,7 +550,7 @@ export function renderTelemPlots() {
 
       ctx.strokeStyle = s.color;
       ctx.lineWidth = 1.5;
-      ctx.setLineDash([]);
+      ctx.setLineDash(s.dashed ? [4, 3] : []);
       ctx.beginPath();
       for (let i = 0; i < telem.length; i++) {
         const px = (telem[i].t - tMin) / tRange * W;
@@ -547,6 +558,7 @@ export function renderTelemPlots() {
         i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
       }
       ctx.stroke();
+      ctx.setLineDash([]);
 
       // Axis labels: left series uses left edge below title; right-axis series uses right edge
       const maxLabel = yMax % 1 === 0 ? String(yMax) : yMax.toFixed(1);
@@ -577,6 +589,27 @@ export function renderTelemPlots() {
     [{ key: 'speed',  color: '#00eeff', yMin: 0, yMax: 600 }],
     'VELOCITY m/s');
 
+  // Burnout speed reference line on velocity plot
+  if (intc.burnoutSpd && telem.length >= 2) {
+    const velCanvas = document.getElementById('plotVelocity');
+    if (velCanvas) {
+      const ctx2 = velCanvas.getContext('2d');
+      const W2 = velCanvas.width, H2 = velCanvas.height;
+      const yMax2 = 600, yMin2 = 0, yRange2 = yMax2 - yMin2;
+      const py2 = H2 - (intc.burnoutSpd - yMin2) / yRange2 * H2;
+      ctx2.strokeStyle = '#335566';
+      ctx2.lineWidth = 1;
+      ctx2.setLineDash([5, 4]);
+      ctx2.beginPath(); ctx2.moveTo(0, py2); ctx2.lineTo(W2, py2); ctx2.stroke();
+      ctx2.setLineDash([]);
+      ctx2.font = '8px Share Tech Mono, monospace';
+      ctx2.fillStyle = '#335566';
+      ctx2.textAlign = 'right';
+      ctx2.fillText('V_bo', W2 - 2, py2 - 2);
+      ctx2.textAlign = 'left';
+    }
+  }
+
   drawPlot(document.getElementById('plotAccel'), telem,
     [{ key: 'accMag', color: '#ffcc00', yMin: 0, yMax: 300 }],
     'ACCEL m/s²');
@@ -588,10 +621,28 @@ export function renderTelemPlots() {
     ],
     'THRUST / DRAG N');
 
+  // ALTm/LAT-Gg: auto-scale latG axis
+  const latGMax = autoScaleMax(telem.map(d => d.latG ?? 0));
   drawPlot(document.getElementById('plotAltG'), telem,
     [
-      { key: 'altitude', color: '#33aaff', yMin: 0, yMax: 500 },
-      { key: 'latG',     color: '#ff8800', yMin: 0, yMax: 25, rightAxis: true },
+      { key: 'altitude',      color: '#33aaff', yMin: 0, yMax: 500 },
+      { key: 'latG',          color: '#ff8800', yMin: 0, yMax: latGMax, rightAxis: true },
+      { key: 'effectiveLatG', color: '#884400', yMin: 0, yMax: latGMax, rightAxis: true, dashed: true },
     ],
-    'ALT m / LAT-G g');
+    `ALT m / LAT-G g (max ${latGMax.toFixed(1)})`);
+
+  // EFFECTIVE-G CAP: effectiveLatG vs latG
+  const effGMax = autoScaleMax(telem.map(d => Math.max(d.effectiveLatG ?? 0, d.latG ?? 0)));
+  drawPlot(document.getElementById('plotEffG'), telem,
+    [
+      { key: 'effectiveLatG', color: '#ff8800', yMin: 0, yMax: effGMax },
+      { key: 'latG',          color: '#00ccff', yMin: 0, yMax: effGMax },
+    ],
+    'EFF-G / LAT-G g');
+
+  // TURN RATE °/s
+  const turnMax = autoScaleMax(telem.map(d => d.turnRate ?? 0));
+  drawPlot(document.getElementById('plotTurnRate'), telem,
+    [{ key: 'turnRate', color: '#cc44ff', yMin: 0, yMax: turnMax }],
+    'TURN °/s');
 }
